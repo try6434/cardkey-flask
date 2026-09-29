@@ -10,23 +10,82 @@ const GENRE_LABELS = {
   urban: ["通讯录", "世界书", "设置", "语音"],
   xianxia: ["传音玉简", "世界书", "设置", "语音"],
   wuxia: ["江湖名册", "世界书", "设置", "语音"],
+  ancient: ["朝堂名录", "世界书", "设置", "语音"],
+  alternate_history: ["人物志", "世界书", "设置", "语音"],
+  primordial: ["封神榜", "世界书", "设置", "语音"],
+  palace: ["宫人名册", "世界书", "设置", "语音"],
+  campus: ["同学录", "世界书", "设置", "语音"],
+  workplace: ["同事名录", "世界书", "设置", "语音"],
+  entertainment: ["艺人名单", "世界书", "设置", "语音"],
+  esports: ["战队名单", "世界书", "设置", "语音"],
+  fantasy: ["通讯水晶", "世界书", "设置", "语音"],
+  medieval: ["骑士名册", "世界书", "设置", "语音"],
+  vampire: ["血族名录", "世界书", "设置", "语音"],
+  norse: ["英灵名册", "世界书", "设置", "语音"],
   "sci-fi": ["联络终端", "世界书", "设置", "语音"],
-  cthulhu: ["联络记录", "世界书", "设置", "语音"],
+  interstellar: ["星图通讯", "世界书", "设置", "语音"],
+  cyberpunk: ["数据终端", "世界书", "设置", "语音"],
   apocalypse: ["幸存者名单", "世界书", "设置", "语音"],
-  fantasy: ["通讯水晶", "世界书", "设置", "语音"]
+  cthulhu: ["联络记录", "世界书", "设置", "语音"],
+  infinite: ["副本联络", "世界书", "设置", "语音"],
+  quick_transmigration: ["任务者名册", "世界书", "设置", "语音"],
+  rebirth: ["故人录", "世界书", "设置", "语音"],
+  supernatural: ["阴阳名册", "世界书", "设置", "语音"],
+  mystery: ["侦探联络", "世界书", "设置", "语音"]
 };
 
-const DEFAULT_TEMPLATES = [
-  ["凌朔然","男",27,"核心人物","主势力","冷静、克制、观察敏锐","与你的主线存在深层联系。","过去被一段未公开的事件改变。","寻找某个失落真相并保护关键人物。","冷淡的观望","主线长期角色。","隐藏着与主线有关的过去。","affinity:1 >= 60","必须在世界剧情中自然遭遇。","保持身份边界，不虚构未发生的现实遭遇。",null],
-  ["沈砚","男",25,"调查者","势力一","谨慎、理性、毒舌","擅长搜集情报。","曾经错过一次重要选择。","查清一桩被掩盖的旧案。","谨慎试探","悬疑支线。","掌握一份旧案副本。","stage >= 3","必须在调查剧情中自然遭遇。","只说自己知道的情报。",null],
-  ["顾清辞","男",24,"医者","势力二","温和、坚定、细致","掌握稀有知识。","身上藏着一个不能轻易提起的秘密。","寻找失落的药方。","友善但谨慎","成长支线。","失落药方的真正来源。","affinity:3 >= 60","必须在危机/治疗相关剧情中自然遭遇。","保持医者身份与知识边界。",null],
-  ["苏晚","女",23,"旅行者","中立","活泼、敏锐、好奇","常常比别人更早发现异常。","记得一段与主线有关的梦境。","寻找梦中出现的地方。","好奇","探索支线。","梦境与某地点有关。","encounter:4","必须在探索剧情中自然遭遇。","不主动泄露未知真相。",null],
-  ["陆沉","男",30,"势力首领","势力三","沉稳、强势、守信","拥有重要资源。","曾为某个错误选择付出代价。","维持势力平衡。","审慎","势力线。","一次旧盟约的代价。","event:关系转折","必须通过势力剧情自然遭遇。","言行符合首领身份。",null],
-  ["叶知秋","女",26,"学者","势力二","清醒、温柔、固执","研究世界规则。","发现过一条被删除的记录。","证明一个被否定的理论。","礼貌","知识线。","被删除的世界规则记录。","stage >= 4","必须在知识/调查剧情中自然遭遇。","避免凭空知道玩家秘密。",null],
-  ["闻人曜","男",28,"竞技者","势力一","直率、好胜、讲义气","行动力极强。","有一段不愿公开的失败经历。","重新证明自己。","有竞争心","竞争线。","失败经历背后的原因。","affinity:7 >= 60","必须在竞争或行动剧情中自然遭遇。","不跨出世界设定。",null],
-  ["林妍","女",21,"新人","中立","谨慎、善良、慢热","成长潜力很高。","小时候见过一件奇怪的事。","找到事件真相。","小心防备","成长线。","童年所见异常的真相。","stage >= 5","必须在成长/异常事件中自然遭遇。","信息来源必须符合角色经历。",null],
-  ["江临","男",32,"隐秘观察者","中立","寡言、冷静、难以读懂","总在关键时刻出现。","知道一部分隐藏真相。","判断谁值得信任。","难以捉摸","隐藏线。","关于世界底层规则的一小段真相。","event:隐藏线索出现","必须在关键节点自然遭遇。","不一次性泄露全部真相。",null]
-];
+const SURNAMES = ["李","王","张","刘","陈","杨","赵","黄","周","吴","徐","孙","胡","朱","高","林","何","郭","马","罗","宋","郑","谢","韩","唐","冯","董","萧","程","曹","袁","邓","许","傅","沈","曾","彭","吕","苏","卢","蒋","蔡","贾","丁","魏","薛","叶","余","潘","杜","戴","夏","钟","汪","田","任","姜","范","方","石","姚","谭","廖","邹","熊","金","陆","郝","孔","白","崔","康","毛","邱","秦","江","史","顾","侯","邵","孟","龙","万","段","雷","钱","汤","尹","黎","易","常","武","乔","贺","赖","龚","文"];
+const DOUBLE_SURNAMES = ["司马","上官","欧阳","司徒","独孤","慕容","纳兰","诸葛","夏侯","东方","皇甫","尉迟","公孙","令狐"];
+const GIVEN = {
+  eastern: ["凌","玄","清","尘","渊","宸","瑾","珩","玥","瑶","璃","霜","雪","墨","竹","吟","逍","遥","月","寒","剑","书","昭","仪","婉","容","琛","珏","瑄","璟","芷","兰","蕙","筠","笙","瑞","昌","世","承","景","若","云","风","雨","雷","电","星","辰","天","夜","无","忘","归","落","残","孤","鸿","雁","霜","露","烟","霞","晴","岚","岫","枫","梧","桐","柳","荷","莲","桃","樱","棠","梨","梅","兰","竹","菊"],
+  modern: ["子","雨","欣","佳","思","明","志","建","晓","宇","皓","然","一","诺","梓","涵","怡","轩","浩","睿","嘉","婷","雪","文","国","海","强","磊","军","洋","勇","艳","杰","娟","涛","明","超","秀","英","华","慧","巧","美","娜","静","淑","惠","珠","翠","雅","芝","玉","萍","红","娥","芬","燕","彩","春","菊"],
+  western: ["凯","伦","诺","维","琳","莎","蕾","克","斯","洛","伊","亚","伦","德","安","娜","丽","丝","特","凡","尼","尔","奥","拉","瑟","兰","温","格","莉","安","雅","典","娜","佛","雷"],
+  scifi: ["星","舰","零","一","七","空","光","量","子","核","磁","波","频","谱","网","络","端","协","议","序","列","号","格","点","码","智","脑","芯","电","磁","力","场","维","度","跨","星","辰","宇","宙"],
+  dark: ["铁","寒","厉","霜","夜","冥","刃","荒","骨","寂","默","岩","峰","峥","魇","蚀","噬","灭","劫","煞","冥","幽","玄","黄","焚","碎","裂","残","断","绝","荒","芜","寂","寥"]
+};
+const GENRE_GROUP = {
+  xianxia:"eastern", wuxia:"eastern", ancient:"eastern", alternate_history:"eastern", primordial:"eastern", palace:"eastern",
+  urban:"modern", campus:"modern", workplace:"modern", entertainment:"modern", esports:"modern",
+  fantasy:"western", medieval:"western", vampire:"western", norse:"western",
+  scifi:"scifi", interstellar:"scifi", cyberpunk:"scifi",
+  apocalypse:"dark", cthulhu:"dark", infinite:"dark", quick_transmigration:"dark", rebirth:"dark", supernatural:"dark", mystery:"dark"
+};
+const IDENTITY_POOL = {
+  eastern: ["弟子","长老","散修","侍卫","谋士","医者","刺客","书生","将军","商贾","官宦","宫女","掌门","护法","侠客","镖师","隐士","史官"],
+  modern: ["学生","教师","医生","律师","职员","老板","艺人","主播","电竞选手","记者","警察","设计师","程序员","厨师","律师","店长"],
+  western: ["骑士","法师","刺客","贵族","学者","吟游诗人","血族","狼人","祭司","佣兵","盗贼","领主"],
+  scifi: ["军官","舰长","研究员","黑客","义体医生","记者","走私者","AI代理人","工程师","飞行员"],
+  dark: ["幸存者","调查员","猎人","道士","警察","侦探","流浪汉","任务者","线人","法医"]
+};
+const FACTION_POOL = {
+  eastern: ["宗门","朝廷","江湖盟","世家","中立","暗部","帮派","边塞"],
+  modern: ["公司","学校","工作室","警局","独立","医院","媒体"],
+  western: ["王国","魔法学院","教廷","血族氏族","狼族部落","独立","佣兵工会"],
+  scifi: ["联邦","帝国","企业","叛军","独立","科研站"],
+  dark: ["避难所","调查局","独立","神秘组织","警方","地下势力"]
+};
+
+function pickArr(arr, seed){ if(!arr.length) return ""; let n=0; for(const ch of String(seed)) n=(n*31+ch.charCodeAt(0))>>>0; return arr[n%arr.length]; }
+function pickRandom(arr){ if(!arr.length) return ""; return arr[Math.floor(Math.random()*arr.length)]; }
+
+function generateName(genre, seed){
+  const group = GENRE_GROUP[genre] || "modern";
+  const pool = GIVEN[group] || GIVEN.modern;
+  const useDouble = Math.random() < 0.08;
+  const surname = useDouble ? pickRandom(DOUBLE_SURNAMES) : pickRandom(SURNAMES);
+  const len = 1 + Math.floor(Math.random()*2);
+  let given = "";
+  for(let i=0;i<len;i++) given += pickRandom(pool);
+  return surname + given;
+}
+
+const WARM_PERSONALITIES = ["热情开朗","阳光乐天","仗义热忱","讨好型","温柔慢热","敏感共情"];
+const COLD_PERSONALITIES = ["清冷内敛","孤僻疏离","阴郁敏感","悲观多虑","固执闷葫芦","独立寡言"];
+function affinityForPersonality(personality){
+  for(const p of WARM_PERSONALITIES) if(personality.includes(p)) return 5 + Math.floor(Math.random()*6);
+  for(const p of COLD_PERSONALITIES) if(personality.includes(p)) return -3 - Math.floor(Math.random()*6);
+  return Math.floor(Math.random()*7) - 2;
+}
 
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","access-control-allow-origin":"*","access-control-allow-headers":"content-type, authorization","access-control-allow-methods":"GET,POST,PUT,DELETE,OPTIONS"}})}
 const now=()=>Math.floor(Date.now()/1000);
@@ -68,16 +127,48 @@ async function createWorld(env,card){
   const worldName=`世界-${card.code.slice(-4)}`;
   const background=`这是一个${seed.genre}世界。${seed.genreRule}关系模式：${seed.relationship}；剧情方向：${seed.plot}。${seed.plotRule}`;
   const rules="玩家行动会造成连续反应；角色只能知道符合其经历的信息；真实遭遇只能发生在世界剧情中；通讯录私聊不能制造现实遭遇；隐藏内容只有满足条件后显示；世界状态由因果链持续推进。";
-  const power=seed.genre==="xianxia"?"炼气→筑基→金丹→元婴→化神→炼虚→合体→大乘（仅作世界规则参考）。":`能力体系：${seed.genre}主题成长体系，强度由世界规则与剧情共同决定。`;
+  const power=seed.genre==="xianxia"?"炼气→筑基→金丹→元婴→化神→炼虚→合体→大乘（仅作世界规则参考）。":seed.genre==="wuxia"?"后天→先天→宗师→大宗师→传说（仅作世界规则参考）。":seed.genre==="fantasy"?"元素觉醒→初级法师→中级→高级→圣域→传奇（仅作世界规则参考）。":seed.genre==="interstellar"?"自然人→义体改造→基因强化→星舰指挥→星际公民（仅作世界规则参考）。":seed.genre==="cyberpunk"?"无改造→浅层义体→深层义体→神经接口→幽灵（仅作世界规则参考）。":`能力体系：${seed.genre}主题成长体系，强度由世界规则与剧情共同决定。`;
   const wr=await env.DB.prepare(`INSERT INTO worlds(card_id,name,genre,relationship_type,plot_type,background,world_rules,power_system,current_location,current_time,weather,player_state,hidden_state,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(card.id,worldName,seed.genre,seed.relationship,seed.plot,background,rules,power,"初始区域","第一天 08:00","晴",JSON.stringify({name:"玩家",stats:{},custom:{},actionCount:0}),JSON.stringify({stage:0,unlocked:[],lastEvent:null}),"active",t).run();
   const wid=wr.meta.last_row_id;
   const temp=await env.DB.prepare("SELECT * FROM character_templates ORDER BY id LIMIT 9").all();
-  const rows=temp.results?.length?temp.results:DEFAULT_TEMPLATES.map(x=>({name:x[0],sex:x[1],age:x[2],identity:x[3],faction:x[4],personality:x[5],background:x[6],past:x[7],goals:x[8],initial_attitude:x[9],story_arc:x[10],hidden_secret:x[11],clue_condition:x[12],encounter_condition:x[13],chat_rules:x[14],voice_id:x[15]}));
+  let rows;
+  if(temp.results?.length){
+    rows=temp.results;
+  } else {
+    const [outerSeeds,innerSeeds,flawSeeds]=await Promise.all([enabledSeeds(env,"personality_outer"),enabledSeeds(env,"personality_inner"),enabledSeeds(env,"personality_flaw")]);
+    const group=GENRE_GROUP[seed.genre]||"modern";
+    const idPool=IDENTITY_POOL[group]||IDENTITY_POOL.modern;
+    const facPool=FACTION_POOL[group]||FACTION_POOL.modern;
+    rows=[];
+    for(let i=0;i<9;i++){
+      const outer=pickRandom(outerSeeds)?.name||"沉稳";
+      const inner=pickRandom(innerSeeds)?.name||"现实主义";
+      const flaw=pickRandom(flawSeeds)?.name||"不善表达";
+      const name=generateName(seed.genre,card.code+i);
+      rows.push({
+        name, sex: Math.random()<0.5?"男":"女", age: 18+Math.floor(Math.random()*20),
+        identity: pickRandom(idPool), faction: pickRandom(facPool),
+        personality: `表层${outer}；内核${inner}；缺陷：${flaw}。`,
+        background: `出身于本世界的普通环境，因机缘与你产生交集。`,
+        past: `有一段未向人提起的过往。`,
+        goals: `在这个世界中找到自己的方向。`,
+        initial_attitude: `初次见面，保持距离观察。`,
+        story_arc: `与${name}的关系将随互动逐渐展开。`,
+        hidden_secret: `${name}藏着一个与自身经历有关的秘密。`,
+        clue_condition: `stage >= ${Math.min(5,i%5+1)}`,
+        encounter_condition: `必须在世界剧情中自然遭遇${name}。`,
+        chat_rules: `保持${outer}的性格边界，不泄露未解锁的秘密。`,
+        voice_id: null,
+        _affinity: affinityForPersonality(outer)
+      });
+    }
+  }
   const characterSeeds=await enabledSeeds(env,"character");const ids=[];
   for(let i=0;i<9;i++){
     const c=rows[i%rows.length],cs=characterSeeds.length?characterSeeds[i%characterSeeds.length]:null;
     const bg=cs?`${c.background}\n\n角色种子补充：${cs.content}`:c.background;
-    const ins=await env.DB.prepare(`INSERT INTO characters(world_id,name,sex,age,identity,faction,personality,background,past,goals,initial_attitude,affinity,encountered,contact,story_arc,hidden_secret,clue_condition,encounter_condition,chat_rules,voice_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(wid,c.name,c.sex,c.age,c.identity,c.faction,c.personality,bg,c.past||"",c.goals||"",c.initial_attitude||"初始观望。",0,0,0,c.story_arc||"主线支线交织。",c.hidden_secret||`与${c.name}过去有关的隐藏真相。`,c.clue_condition||`stage >= ${Math.min(5,i%5+1)}`,c.encounter_condition||`必须在世界剧情中自然遭遇${c.name}。`,c.chat_rules||"保持角色身份与已知信息边界。",c.voice_id||null).run();
+    const initAffinity=Number(c._affinity||0);
+    const ins=await env.DB.prepare(`INSERT INTO characters(world_id,name,sex,age,identity,faction,personality,background,past,goals,initial_attitude,affinity,encountered,contact,story_arc,hidden_secret,clue_condition,encounter_condition,chat_rules,voice_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(wid,c.name,c.sex,c.age,c.identity,c.faction,c.personality,bg,c.past||"",c.goals||"",c.initial_attitude||"初始观望。",initAffinity,0,0,c.story_arc||"主线支线交织。",c.hidden_secret||`与${c.name}过去有关的隐藏真相。`,c.clue_condition||`stage >= ${Math.min(5,i%5+1)}`,c.encounter_condition||`必须在世界剧情中自然遭遇${c.name}。`,c.chat_rules||"保持角色身份与已知信息边界。",c.voice_id||null).run();
     ids.push(ins.meta.last_row_id);
   }
   for(let i=0;i<ids.length-1;i++)await env.DB.prepare("INSERT INTO relationships(world_id,from_character_id,to_character_id,relation,strength) VALUES(?,?,?,?,?)").bind(wid,ids[i],ids[i+1],i%2?"互相利用":"同阵营/利益关联",50).run();
