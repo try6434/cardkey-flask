@@ -151,6 +151,8 @@ button{border:0;background:none;color:inherit;cursor:pointer;touch-action:manipu
   color:var(--bg);font-weight:600;transition:opacity .15s}
 .save-row button:active{opacity:.8}
 .save-row button.secondary{background:var(--line);color:var(--text)}
+.save-full{width:100%;height:46px;border-radius:12px;background:var(--accent);color:#fff;font-weight:600;margin-top:14px;transition:opacity .15s}
+.save-full:active{opacity:.8}
 
 /* 私聊 */
 .contact-chat{display:flex;flex-direction:column;gap:8px}

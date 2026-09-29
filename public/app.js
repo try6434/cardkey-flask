@@ -159,7 +159,7 @@ function renderWorld() {
       </main>
       <div class="composer-wrap">
         ${state.emojiOpen ? emojiPanel() : ""}
-        ${state.plusOpen ? plusPanel(labels) : ""}
+        ${state.plusOpen ? plusPanel() : ""}
         <div class="composer-row">
           <button class="icon-btn" id="emojiBtn" aria-label="emoji">🙂</button>
           <div class="input-shell">
@@ -188,12 +188,14 @@ function emojiPanel() {
   const emojis = ["😀","😄","🥹","😂","🙂","😌","😍","🥰","😳","😎","🤔","😐","😮","😴","😭","😡","❤️","🖤","✨","🌙","🔥","🌸","🌧️","☀️","🍵","🍎","🎵","🎮","🫶","👍","👀","🙏","💫","🪽","🐺","🐈","🦊","🐉","☕","📖","⚔️","🗡️","🏹","🔮"];
   return `<div class="emoji-panel">${emojis.map(e => `<button data-emoji="${e}">${e}</button>`).join("")}</div>`;
 }
-function plusPanel(labels) {
+function plusPanel() {
   return `<div class="plus-panel"><div class="plus-grid">
-    <button class="plus-item" data-fn="contacts"><span class="ico">👥</span><span class="name">${esc(labels[0])}</span><div class="hint">与你真实遭遇过的人物</div></button>
-    <button class="plus-item" data-fn="worldbook"><span class="ico">📖</span><span class="name">${esc(labels[1])}</span><div class="hint">世界规则与已知信息</div></button>
-    <button class="plus-item" data-fn="settings"><span class="ico">⚙️</span><span class="name">${esc(labels[2])}</span><div class="hint">AI、剧情与界面</div></button>
-    <button class="plus-item" data-fn="voice"><span class="ico">♫</span><span class="name">${esc(labels[3])}</span><div class="hint">角色声音与自动朗读</div></button>
+    <button class="plus-item" data-fn="contacts"><span class="ico">👥</span><span class="name">${esc(state.labels[0])}</span><div class="hint">与你真实遭遇过的人物</div></button>
+    <button class="plus-item" data-fn="worldbook"><span class="ico">📖</span><span class="name">世界书</span><div class="hint">世界规则与已知信息</div></button>
+    <button class="plus-item" data-fn="worldview"><span class="ico">🌍</span><span class="name">世界观</span><div class="hint">世界类型偏好，不改剧情</div></button>
+    <button class="plus-item" data-fn="api"><span class="ico">🔑</span><span class="name">API 设置</span><div class="hint">你的 AI 接口</div></button>
+    <button class="plus-item" data-fn="persona"><span class="ico">🧑</span><span class="name">我的人设</span><div class="hint">只改你自己，不动 NPC</div></button>
+    <button class="plus-item" data-fn="voice"><span class="ico">♫</span><span class="name">语音</span><div class="hint">自定义 TTS 音色</div></button>
   </div></div>`;
 }
 function bindWorldUI() {
@@ -234,7 +236,9 @@ function bindWorldUI() {
     renderWorld();
     if (fn === "contacts") openContacts();
     if (fn === "worldbook") openWorldbook();
-    if (fn === "settings") openSettings();
+    if (fn === "worldview") openWorldview();
+    if (fn === "api") openAPI();
+    if (fn === "persona") openPersona();
     if (fn === "voice") openVoice();
   });
 }
@@ -309,38 +313,59 @@ async function openWorldbook() {
     ${entries || emptyState("暂无可见隐藏条目", "隐藏内容会在达到条件后逐步出现。")}`);
 }
 
-async function openSettings() {
-  let serverPrefs={}; try { serverPrefs=(await api(`/api/settings?worldId=${state.worldId}`)).data||{}; } catch {}
-  const custom=serverPrefs.custom||{};
-  const html = `<div class="sheet-head"><div class="sheet-title">${esc(state.labels[2])}</div><button class="close" data-close>×</button></div>
-    <div class="form-card"><div class="contact-name">世界偏好</div><div class="field"><label>世界类型偏好</label><input id="genrePref" value="${esc(serverPrefs.world?.genrePreference||state.world?.genre||"")}" placeholder="例如：xianxia / urban"></div>
-      <div class="field"><label>关系偏好</label><input id="relPref" value="${esc(serverPrefs.world?.relationship||state.world?.relationship_type||"")}" placeholder="BG / BL / GL / none"></div>
-      <div class="field"><label>剧情偏好</label><input id="plotPref" value="${esc(serverPrefs.world?.plot||state.world?.plot_type||"")}" placeholder="adventure / mystery / growth"></div>
-    </div>
-    <div class="form-card"><div class="contact-name">AI / API</div><div class="small" style="margin:6px 0 12px">支持兼容 OpenAI Chat Completions 的 HTTPS 接口。API Key 只保存在当前浏览器，不上传到 D1，也不会写入 Git。</div>
+async function openWorldview() {
+  let sp={}; try { sp=(await api(`/api/settings?worldId=${state.worldId}`)).data||{}; } catch {}
+  openSheet(`<div class="sheet-head"><div class="sheet-title">世界观</div><button class="close" data-close>×</button></div>
+    <div class="form-card"><div class="contact-name">世界类型偏好</div>
+      <div class="small" style="margin:6px 0 12px">选择偏好方向，不改变已经发生的剧情和事件。</div>
+      <div class="field"><label>世界类型</label><input id="genrePref" value="${esc(sp.world?.genrePreference||state.world?.genre||"")}" placeholder="xianxia / urban / interstellar / cthulhu"></div>
+      <div class="field"><label>关系类型</label><input id="relPref" value="${esc(sp.world?.relationship||state.world?.relationship_type||"")}" placeholder="BG / BL / GL / beastman / poly"></div>
+      <div class="field"><label>剧情方向</label><input id="plotPref" value="${esc(sp.world?.plot||state.world?.plot_type||"")}" placeholder="adventure / mystery / dark / sweet"></div>
+      <button id="saveWorldview" class="save-full">保存</button>
+    </div>`);
+  $("#saveWorldview").onclick = async () => {
+    await api(`/api/settings?worldId=${state.worldId}`,{method:'POST',body:JSON.stringify({worldId:state.worldId,data:{world:{genrePreference:$("#genrePref").value.trim(),relationship:$("#relPref").value.trim(),plot:$("#plotPref").value.trim()}}})});
+    alert('世界观偏好已保存');
+  };
+}
+
+async function openAPI() {
+  openSheet(`<div class="sheet-head"><div class="sheet-title">API 设置</div><button class="close" data-close>×</button></div>
+    <div class="form-card"><div class="contact-name">AI 接口</div>
+      <div class="small" style="margin:6px 0 12px">兼容 OpenAI Chat Completions 的 HTTPS 接口。Key 只存在你当前浏览器，不上传服务器。</div>
       <div class="field"><label>API 地址</label><input id="aiEndpoint" value="${esc(state.ai.endpoint)}" placeholder="https://api.example.com/v1/chat/completions"></div>
       <div class="field"><label>API Key</label><input id="aiKey" type="password" value="${esc(state.ai.key)}" placeholder="sk-…"></div>
       <div class="field"><label>模型</label><input id="aiModel" value="${esc(state.ai.model)}" placeholder="模型名称"></div>
-      <div class="save-row"><button id="saveAI">保存</button><button class="secondary" id="testAI">测试连接</button></div><div id="aiTestMsg" class="small" style="margin-top:8px"></div>
+      <div class="save-row"><button id="saveAI">保存</button><button class="secondary" id="testAI">测试连接</button></div>
+      <div id="aiTestMsg" class="small" style="margin-top:8px"></div>
+    </div>`);
+  $("#saveAI").onclick = () => { state.ai={endpoint:$("#aiEndpoint").value.trim(),key:$("#aiKey").value,model:$("#aiModel").value.trim()}; save(); $("#aiTestMsg").textContent="已保存到本机"; };
+  $("#testAI").onclick = testAI;
+}
+
+async function openPersona() {
+  let sp={}; try { sp=(await api(`/api/settings?worldId=${state.worldId}`)).data||{}; } catch {}
+  const custom=sp.custom||{};
+  openSheet(`<div class="sheet-head"><div class="sheet-title">我的人设</div><button class="close" data-close>×</button></div>
+    <div class="form-card"><div class="contact-name">你的角色</div>
+      <div class="small" style="margin:6px 0 12px">只修改你自己的角色，不会改动任何 NPC。</div>
+      <div class="field"><label>称呼</label><input id="customName" value="${esc(custom.name||"")}" placeholder="你希望别人怎么叫你"></div>
+      <div class="field"><label>外貌特征</label><input id="customLook" value="${esc(custom.look||"")}" placeholder="例如：黑衣、佩剑、左眉有疤"></div>
+      <div class="field"><label>性格设定</label><input id="customPersona" value="${esc(custom.persona||"")}" placeholder="例如：冷静、话少、重情义"></div>
+      <div class="field"><label>背景/自定义</label><textarea id="customLore" placeholder="这个世界需要记住的关于你的信息">${esc(custom.lore||"")}</textarea></div>
     </div>
-    <div class="form-card"><div class="contact-name">剧情与界面</div><div class="field"><label>节奏</label><select id="pace"><option value="slow">慢</option><option value="normal">正常</option><option value="fast">快</option></select></div>
-      <div class="field"><label>界面主题</label><select id="theme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
-      <div class="switch"><div><div class="contact-name">自动推进</div><div class="small">允许世界在每次行动后继续推进事件阶段。</div></div><input id="autoAdvance" type="checkbox"></div>
+    <div class="form-card"><div class="contact-name">界面</div>
+      <div class="field"><label>主题</label><select id="theme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
+      <div class="field"><label>节奏</label><select id="pace"><option value="slow">慢</option><option value="normal">正常</option><option value="fast">快</option></select></div>
     </div>
-    <div class="form-card"><div class="contact-name">玩家自定义</div><div class="small" style="margin:6px 0 12px">这些内容会保存到这个世界的世界书，影响后续 AI 世界上下文。</div>
-      <div class="field"><label>玩家身份/称呼</label><input id="customName" value="${esc(custom.name||"")}" placeholder="例如：渡鸦"></div>
-      <div class="field"><label>自定义设定</label><textarea id="customLore" placeholder="你希望这个世界记住的自定义信息">${esc(custom.lore||"")}</textarea></div>
-    </div>
-    <div class="form-card"><div class="contact-name">其他</div><div class="small">当前世界的状态始终由服务器 D1 保存；清除浏览器数据不会删除云端世界，但会清除本机 AI / TTS 密钥与界面偏好。</div></div>`;
-  openSheet(html);
-  $("#pace").value=state.prefs.pace||serverPrefs.plot?.pace||"normal"; $("#theme").value=state.prefs.theme||serverPrefs.appearance?.theme||"system"; $("#autoAdvance").checked=serverPrefs.plot?.autoAdvance!==false;
-  $("#saveAI").onclick=()=>{state.ai={endpoint:$("#aiEndpoint").value.trim(),key:$("#aiKey").value,model:$("#aiModel").value.trim()};save();$("#aiTestMsg").textContent="AI 设置已保存到当前设备"};
-  $("#testAI").onclick=testAI;
-  const saveAll=document.createElement('button'); saveAll.textContent='保存全部设置'; saveAll.id='saveAllPrefs'; saveAll.style.marginTop='12px'; $("#autoAdvance").closest('.form-card').appendChild(saveAll);
-  saveAll.onclick=async()=>{
-    state.prefs={...state.prefs,pace:$("#pace").value,theme:$("#theme").value,autoAdvance:$("#autoAdvance").checked}; applyTheme();
-    const data={plot:{pace:state.prefs.pace,autoAdvance:state.prefs.autoAdvance},appearance:{theme:state.prefs.theme},world:{genrePreference:$("#genrePref").value.trim(),relationship:$("#relPref").value.trim(),plot:$("#plotPref").value.trim()},custom:{name:$("#customName").value.trim(),lore:$("#customLore").value}};
-    await api(`/api/settings?worldId=${state.worldId}`,{method:'POST',body:JSON.stringify({worldId:state.worldId,data})}); save(); alert('设置已保存');
+    <button id="savePersona" class="save-full">保存</button>`);
+  $("#theme").value = state.prefs.theme||sp.appearance?.theme||"system";
+  $("#pace").value = state.prefs.pace||sp.plot?.pace||"normal";
+  $("#savePersona").onclick = async () => {
+    state.prefs = {...state.prefs, theme:$("#theme").value, pace:$("#pace").value};
+    applyTheme();
+    await api(`/api/settings?worldId=${state.worldId}`,{method:'POST',body:JSON.stringify({worldId:state.worldId,data:{appearance:{theme:state.prefs.theme},plot:{pace:state.prefs.pace},custom:{name:$("#customName").value.trim(),look:$("#customLook").value.trim(),persona:$("#customPersona").value.trim(),lore:$("#customLore").value}}})});
+    save(); alert('人设已保存');
   };
 }
 
