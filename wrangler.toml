@@ -6,7 +6,7 @@ assets = { directory = "./public", binding = "ASSETS" }
 [[d1_databases]]
 binding = "DB"
 database_name = "cardworld"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "710e694b-aa46-4686-a71b-6a66176cdea7"
 
 [triggers]
 crons = ["*/15 * * * *"]
