@@ -168,7 +168,7 @@ async function createWorld(env,card){
     const c=rows[i%rows.length],cs=characterSeeds.length?characterSeeds[i%characterSeeds.length]:null;
     const bg=cs?`${c.background}\n\n角色种子补充：${cs.content}`:c.background;
     const initAffinity=Number(c._affinity||0);
-    const ins=await env.DB.prepare(`INSERT INTO characters(world_id,name,sex,age,identity,faction,personality,background,past,goals,initial_attitude,affinity,encountered,contact,story_arc,hidden_secret,clue_condition,encounter_condition,chat_rules,voice_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(wid,c.name,c.sex,c.age,c.identity,c.faction,c.personality,bg,c.past||"",c.goals||"",c.initial_attitude||"初始观望。",initAffinity,0,0,c.story_arc||"主线支线交织。",c.hidden_secret||`与${c.name}过去有关的隐藏真相。`,c.clue_condition||`stage >= ${Math.min(5,i%5+1)}`,c.encounter_condition||`必须在世界剧情中自然遭遇${c.name}。`,c.chat_rules||"保持角色身份与已知信息边界。",c.voice_id||null).run();
+    const ins=await env.DB.prepare(`INSERT INTO characters(world_id,name,sex,age,identity,faction,personality,background,past,goals,initial_attitude,affinity,hostility,encountered,contact,story_arc,hidden_secret,clue_condition,encounter_condition,chat_rules,voice_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(wid,c.name,c.sex,c.age,c.identity,c.faction,c.personality,bg,c.past||"",c.goals||"",c.initial_attitude||"初始观望。",initAffinity,0,0,0,c.story_arc||"主线支线交织。",c.hidden_secret||`与${c.name}过去有关的隐藏真相。`,c.clue_condition||`stage >= ${Math.min(5,i%5+1)}`,c.encounter_condition||`必须在世界剧情中自然遭遇${c.name}。`,c.chat_rules||"保持角色身份与已知信息边界。",c.voice_id||null).run();
     ids.push(ins.meta.last_row_id);
   }
   for(let i=0;i<ids.length-1;i++)await env.DB.prepare("INSERT INTO relationships(world_id,from_character_id,to_character_id,relation,strength) VALUES(?,?,?,?,?)").bind(wid,ids[i],ids[i+1],i%2?"互相利用":"同阵营/利益关联",50).run();
@@ -179,7 +179,7 @@ async function createWorld(env,card){
   ]);
   await env.DB.batch([
     env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at) VALUES(?,?,?,?,?,?,?)").bind(wid,"主线：揭开世界真相",`在${seed.genre}世界中找到核心秘密，理解这个世界的本质。与关键角色深入互动，收集足够线索。`,"main","active",0,t),
-    env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at) VALUES(?,?,?,?,?,?,?)").bind(wid,"支线：沉沦之夜","与至少一个角色堕入危险而禁忌的亲密关系（好感度达到60以上）。这条线将带你走向黑暗、占有欲与欲望交织的深渊。","side","active",1,t),
+    env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at) VALUES(?,?,?,?,?,?,?)").bind(wid,"支线：沉沦之夜","与至少一个角色同时达到极度爱恋（好感≥90）和极度敌意（负面≥90），堕入爱恨交织的黑暗深渊。","side","active",1,t),
     env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at) VALUES(?,?,?,?,?,?,?)").bind(wid,"支线：探索未知","解锁至少3条隐藏线索或世界书秘密，探索这个世界的深层规则。","side","active",2,t)
   ]);
   await env.DB.batch([
@@ -236,7 +236,7 @@ async function maybeAI(env,world,instruction,ai,context={}){
   const endpoint=String(ai?.endpoint||env.AI_ENDPOINT||"").trim();const apiKey=String(ai?.key||env.AI_API_KEY||"").trim();const model=String(ai?.model||env.AI_MODEL||"").trim();
   if(!endpoint||!model)return null;
   if(!/^https:\/\//i.test(endpoint))return {error:"AI API 地址必须使用 HTTPS。"};
-  const system=`你是 CardWorld 的世界引擎，不是普通聊天机器人。你负责依据世界状态判断玩家行动造成的后果。\n严格规则：1) 只有真实发生于世界剧情的相遇才能把角色 encountered=true；2) 通讯/私聊绝不制造现实遭遇；3) 未满足条件的隐藏线索、秘密、世界书隐藏条目不可泄露；4) 角色只能知道符合自身经历和已解锁剧情的信息；5) 每次行动必须考虑因果、时间、地点、天气、事件阶段、人物关系与此前剧情；6) 不要重置世界，不要凭空新增角色；7) 输出严格 JSON，不要 Markdown。JSON 字段：narrative(string), primaryCharacterId(number|null), events([{title,status}]), encounters([{characterId,affinityDelta,location}]), affinityChanges([{characterId,delta}]), worldUpdates({current_location,current_time,weather,stage,player_state_patch}), unlockClues([string])。affinityChanges 只用于已经遭遇的角色；encounters 才能首次建立 encountered。\n当前服务端上下文：${JSON.stringify(context).slice(0,38000)}`;
+  const system=`你是 CardWorld 的世界引擎，不是普通聊天机器人。你负责依据世界状态判断玩家行动造成的后果。\n严格规则：1) 只有真实发生于世界剧情的相遇才能把角色 encountered=true；2) 通讯/私聊绝不制造现实遭遇；3) 未满足条件的隐藏线索、秘密、世界书隐藏条目不可泄露；4) 角色只能知道符合自身经历和已解锁剧情的信息；5) 每次行动必须考虑因果、时间、地点、天气、事件阶段、人物关系与此前剧情；6) 不要重置世界，不要凭空新增角色；7) 输出严格 JSON，不要 Markdown。JSON 字段：narrative(string), primaryCharacterId(number|null), events([{title,status}]), encounters([{characterId,affinityDelta,location}]), affinityChanges([{characterId,delta}]), hostilityChanges([{characterId,delta}]), worldUpdates({current_location,current_time,weather,stage,player_state_patch}), unlockClues([string])。affinityChanges 只用于已经遭遇的角色；hostilityChanges 用于角色对玩家的恨意/敌意/黑暗执念变化（0-100）；encounters 才能首次建立 encountered。\n当前服务端上下文：${JSON.stringify(context).slice(0,38000)}`;
   try{
     const res=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json",...(apiKey?{authorization:`Bearer ${apiKey}`}:{})},body:JSON.stringify({model,messages:[{role:"system",content:system},{role:"user",content:instruction}],temperature:0.85})});
     if(!res.ok)return {error:`AI API ${res.status}`};
@@ -278,11 +278,13 @@ async function applyWorldEngineResult(env,wid,w,structured){
   const result=structured&&typeof structured==="object"?structured:{};
   const currentState=safeJsonParse(w.hidden_state,{stage:0,unlocked:[]});
   const updates=result.worldUpdates&&typeof result.worldUpdates==="object"?result.worldUpdates:{};
-  const chars=await env.DB.prepare("SELECT id,affinity,encountered,contact,name FROM characters WHERE world_id=?").bind(wid).all();const cmap=new Map((chars.results||[]).map(x=>[Number(x.id),x]));
+  const chars=await env.DB.prepare("SELECT id,affinity,hostility,encountered,contact,name FROM characters WHERE world_id=?").bind(wid).all();const cmap=new Map((chars.results||[]).map(x=>[Number(x.id),x]));
   const encounters=Array.isArray(result.encounters)?result.encounters:[];const affinityChanges=Array.isArray(result.affinityChanges)?result.affinityChanges:[];
   const touched=[];const encounteredIds=new Set();
   for(const item of encounters){const cid=Number(item?.characterId);const c=cmap.get(cid);if(!c)continue;const loc=contentText(item?.location||w.current_location).slice(0,300);const delta=clamp(Number(item?.affinityDelta||0),-30,30);const next=clamp(Number(c.affinity||0)+delta,0,100);const contact=next>=30?1:0;await env.DB.prepare("UPDATE characters SET encountered=1,affinity=?,contact=? WHERE id=? AND world_id=?").bind(next,contact,cid,wid).run();await env.DB.prepare("INSERT INTO encounters(world_id,character_id,location,created_at) VALUES(?,?,?,?)").bind(wid,cid,loc,now()).run();await upsertKnownCharacter(env,wid,cid);encounteredIds.add(cid);touched.push({id:cid,name:c.name,affinity:next,encountered:true,contact:contact===1})}
   for(const item of affinityChanges){const cid=Number(item?.characterId),c=cmap.get(cid);if(!c||!c.encountered||encounteredIds.has(cid))continue;const delta=clamp(Number(item?.delta||0),-30,30);const next=clamp(Number(c.affinity||0)+delta,0,100);const contact=next>=30?1:0;await env.DB.prepare("UPDATE characters SET affinity=?,contact=? WHERE id=? AND world_id=?").bind(next,contact,cid,wid).run();await upsertKnownCharacter(env,wid,cid);touched.push({id:cid,name:c.name,affinity:next,encountered:true,contact:contact===1})}
+  const hostilityChanges=Array.isArray(result.hostilityChanges)?result.hostilityChanges:[];
+  for(const item of hostilityChanges){const cid=Number(item?.characterId),c=cmap.get(cid);if(!c||!c.encountered)continue;const delta=clamp(Number(item?.delta||0),-30,30);const next=clamp(Number(c.hostility||0)+delta,0,100);await env.DB.prepare("UPDATE characters SET hostility=? WHERE id=? AND world_id=?").bind(next,cid,wid).run();}
   let stage=clamp(Number(updates.stage??currentState.stage??0),0,20);const userCount=await env.DB.prepare("SELECT COUNT(*) n FROM messages WHERE world_id=? AND channel='story' AND role='user'").bind(wid).first();stage=Math.max(stage,Math.floor(Number(userCount?.n||0)/3));
   const ps=safeJsonParse((await env.DB.prepare("SELECT player_state FROM worlds WHERE id=?").bind(wid).first())?.player_state,{name:"玩家",stats:{},custom:{}});const patch=updates.player_state_patch&&typeof updates.player_state_patch==="object"?updates.player_state_patch:{};for(const [k,v] of Object.entries(patch))ps[k]=v;ps.actionCount=Number(ps.actionCount||0)+1;ps.updatedAt=now();
   const h={...currentState,stage,lastEvent:Array.isArray(result.events)&&result.events[0]?.title||currentState.lastEvent||null,unlocked:Array.isArray(currentState.unlocked)?currentState.unlocked:[]};
@@ -297,15 +299,16 @@ async function applyWorldEngineResult(env,wid,w,structured){
 }
 
 async function checkQuests(env,wid,h){
-  const quests=await env.DB.prepare("SELECT id,title,quest_type,status FROM quests WHERE world_id=? AND status='active'").bind(wid).all();
+  const quests=await env.DB.prepare("SELECT id,title,quest_type,sort_order,status FROM quests WHERE world_id=? AND status='active'").bind(wid).all();
   const unlockedCount=(h.unlocked||[]).length;
   const maxAffinity=await env.DB.prepare("SELECT MAX(affinity) n FROM characters WHERE world_id=? AND encountered=1").bind(wid).first();
+  const darkPair=await env.DB.prepare("SELECT COUNT(*) n FROM characters WHERE world_id=? AND encountered=1 AND affinity>=90 AND hostility>=90").bind(wid).first();
   const stage=Number(h.stage||0);
   const completed=[];
   for(const q of quests.results||[]){
     let done=false;
     if(q.quest_type==="main"&&stage>=5) done=true;
-    if(q.quest_type==="side"&&q.sort_order===1&&Number(maxAffinity?.n||0)>=60) done=true;
+    if(q.quest_type==="side"&&q.sort_order===1&&Number(darkPair?.n||0)>=1) done=true;
     if(q.quest_type==="side"&&q.sort_order===2&&unlockedCount>=3) done=true;
     if(done){
       await env.DB.prepare("UPDATE quests SET status='completed',completed_at=? WHERE id=?").bind(now(),q.id).run();

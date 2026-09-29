@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS characters (
   goals TEXT NOT NULL,
   initial_attitude TEXT NOT NULL,
   affinity INTEGER NOT NULL DEFAULT 0,
+  hostility INTEGER NOT NULL DEFAULT 0,
   encountered INTEGER NOT NULL DEFAULT 0,
   contact INTEGER NOT NULL DEFAULT 0,
   story_arc TEXT NOT NULL,
