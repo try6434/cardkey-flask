@@ -4,7 +4,7 @@ const DUR = Object.freeze({
 });
 const DAY = 86400;
 const GRACE = 5 * DAY;
-const ADMIN_BOOTSTRAP_HASH = "7aa5740b4f25586a20117bd38e1d0bc67d5f3c21089197bd13a715345ab70235"; // SHA-256("153512")
+const ADMIN_BOOTSTRAP_HASH = "80cf7c0ff65bc1294e4698c4aea87a00738f2094b3b81a884cf642b36332520a"; // SHA-256("163512")
 
 const GENRE_LABELS = {
   urban: ["通讯录", "世界书", "设置", "语音"],

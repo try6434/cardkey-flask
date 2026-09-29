@@ -23,9 +23,9 @@ Cloudflare Worker + D1 的卡密驱动 AI 世界系统。首页只输入卡密�
 
 ## 管理员密码
 
-新数据库第一次启动时，管理员密码默认是：`153512`。
+新数据库第一次启动时，管理员密码默认是：`163512`。
 
-代码中不会把明文密码放到前端；Worker 内仅有 `SHA-256("153512")` 的 bootstrap hash。正式部署建议在 Cloudflare Secret 中设置 `ADMIN_PASSWORD`，或者进入后台后立即修改密码。
+代码中不会把明文密码放到前端；Worker 内仅有 `SHA-256("163512")` 的 bootstrap hash。正式部署建议在 Cloudflare Secret 中设置 `ADMIN_PASSWORD`，或者进入后台后立即修改密码。
 
 ## 本地运行
 

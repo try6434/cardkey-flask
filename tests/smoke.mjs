@@ -10,7 +10,7 @@ const db = new DatabaseSync(':memory:');
 db.exec(schema);
 db.exec(seed);
 
-db.exec(`INSERT OR IGNORE INTO admin_settings(id,password_hash,updated_at) VALUES(1,'7aa5740b4f25586a20117bd38e1d0bc67d5f3c21089197bd13a715345ab70235',strftime('%s','now'))`);
+db.exec(`INSERT OR IGNORE INTO admin_settings(id,password_hash,updated_at) VALUES(1,'80cf7c0ff65bc1294e4698c4aea87a00738f2094b3b81a884cf642b36332520a',strftime('%s','now'))`);
 
 class Stmt {
   constructor(sql, params=[]) { this.sql=sql; this.params=params; }
@@ -48,7 +48,7 @@ async function data(res){let x=null;try{x=await res.json()}catch{};return x}
 function ok(cond,msg){if(!cond)throw new Error(msg)}
 
 // 1) Admin password and server session
-let r=await call('/api/auth/card',{method:'POST',body:{code:'153512'}});let d=await data(r);ok(r.status===200&&d.admin&&d.token,'admin login 153512 failed');const admin=d.token;
+let r=await call('/api/auth/card',{method:'POST',body:{code:'163512'}});let d=await data(r);ok(r.status===200&&d.admin&&d.token,'admin login 163512 failed');const admin=d.token;
 // 2) Generate two same-type cards and one expiry test card
 r=await call('/api/admin/cards',{method:'POST',token:admin,body:{duration:'1d',count:2}});d=await data(r);ok(r.status===200&&d.cards.length===2,'generate cards failed');const card1=d.cards[0].code, card2=d.cards[1].code;
 r=await call('/api/admin/cards',{method:'POST',token:admin,body:{duration:'5h',count:1}});d=await data(r);const expCard=d.cards[0].code;
