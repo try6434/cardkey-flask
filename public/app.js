@@ -53,10 +53,13 @@ async function loadWorld() {
   state.characters = data.characters || [];
   state.messages = data.messages || [];
   state.events = data.events || [];
+  state.quests = data.quests || [];
   state.labels = data.labels || state.labels;
   save();
   renderWorld();
   scrollBottom();
+  const introKey = `cw_intro_${state.worldId}`;
+  if (!localStorage.getItem(introKey)) setTimeout(showIntro, 300);
 }
 
 function applyTheme(){document.documentElement.dataset.theme=state.prefs.theme||"system";}
@@ -146,7 +149,10 @@ function renderWorld() {
           <div class="world-name">${esc(w.name || "CardWorld")}</div>
           <div class="world-sub">${esc(w.current_location || "")} · ${esc(w.current_time || "")} · ${esc(w.weather || "")}</div>
         </div>
-        <div class="pill">${esc(String(w.genre || "").toUpperCase())}</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="questBtn" class="quest-btn" title="任务">📜</button>
+          <div class="pill">${esc(String(w.genre || "").toUpperCase())}</div>
+        </div>
       </div>
       <main id="story" class="story">
         <div class="scene">
@@ -215,6 +221,7 @@ function bindWorldUI() {
     renderWorld();
     focusStory();
   };
+  $("#questBtn").onclick = () => openQuests();
   $("#plusBtn").onclick = () => {
     state.plusOpen = !state.plusOpen;
     state.emojiOpen = false;
@@ -256,6 +263,8 @@ async function sendStory() {
       body: JSON.stringify({ worldId: state.worldId, content, ai: state.ai.endpoint ? state.ai : null })
     });
     await loadWorld();
+    if (data.questUpdates?.permanentCard) { showPermanentCard(data.questUpdates.permanentCard); }
+    else if (data.questUpdates?.completed?.length) { alert(`任务完成：${data.questUpdates.completed.map(q=>q.title).join("、")}`); }
     if (state.voice.autoRead) speak(data.reply, data.character?.id);
   } catch (err) {
     alert(err.message);
@@ -434,6 +443,76 @@ async function playTTS(text,cfg,charId){
   const raw=atob(String(b64));const bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);const blob=new Blob([bytes],{type:data.mime_type||"audio/mpeg"});const url=URL.createObjectURL(blob);const audio=new Audio(url);await audio.play();audio.onended=()=>URL.revokeObjectURL(url);
 }
 
+
+async function showIntro(){
+  const w=state.world||{};
+  const text=w.background||"你睁开眼，发现自己来到了一个陌生的世界。";
+  const overlay=document.createElement("div");
+  overlay.className="intro-overlay";
+  overlay.innerHTML=`<div class="intro-scroll"><div class="intro-title">${esc(w.name||"CardWorld")}</div><div class="intro-text">${esc(text)}</div><div class="intro-skip">点击任意处开始</div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click",()=>{overlay.remove();showPersonaForm();},{once:true});
+}
+
+async function showPersonaForm(){
+  const overlay=document.createElement("div");
+  overlay.className="intro-overlay";
+  overlay.innerHTML=`<div class="persona-card">
+    <div class="sheet-title" style="text-align:center;margin-bottom:16px">塑造你的角色</div>
+    <div class="form-card">
+      <div class="field"><label>你的名字</label><input id="pName" placeholder="给自己取个名字"></div>
+      <div class="field"><label>外貌特征</label><input id="pLook" placeholder="例如：黑衣、佩剑"></div>
+      <div class="field"><label>性格</label><input id="pPersona" placeholder="例如：冷静、话少、重情义"></div>
+      <div class="field"><label>身份/背景</label><input id="pIdentity" placeholder="例如：落魄剑客、富家千金"></div>
+    </div>
+    <button id="pSubmit" class="save-full">进入世界</button>
+  </div>`;
+  document.body.appendChild(overlay);
+  $("#pSubmit").onclick=async()=>{
+    const name=$("#pName").value.trim()||"无名者";
+    const look=$("#pLook").value.trim();
+    const persona=$("#pPersona").value.trim();
+    const identity=$("#pIdentity").value.trim();
+    await api(`/api/settings?worldId=${state.worldId}`,{method:"POST",body:JSON.stringify({worldId:state.worldId,data:{custom:{name,look,persona,identity,lore:`外貌：${look}；性格：${persona}；身份：${identity}`}}})});
+    localStorage.setItem(`cw_intro_${state.worldId}`,"1");
+    overlay.remove();
+    openQuests();
+  };
+}
+
+function openQuests(){
+  const qs=state.quests||[];
+  const done=qs.filter(q=>q.status==="completed").length;
+  const body=qs.map(q=>`
+    <div class="list-card" style="margin-top:10px;opacity:${q.status==='completed'?0.5:1}">
+      <div class="list-row">
+        <div>
+          <div class="contact-name">${q.quest_type==='main'?'⭐':'📌'} ${esc(q.title)}</div>
+          <div class="small">${esc(q.description)}</div>
+        </div>
+        <div class="pill">${q.status==='completed'?'✅':'进行中'}</div>
+      </div>
+    </div>`).join("");
+  const reward=qs.find(q=>q.reward_card);
+  const rewardHtml=reward?`<div class="form-card" style="margin-top:14px;border:1.5px solid var(--accent)"><div class="contact-name">🎉 永久卡密奖励</div><div class="small" style="margin:8px 0">全部任务完成！这是本世界唯一的永久卡密：</div><div style="font-family:monospace;font-size:18px;letter-spacing:2px;color:var(--accent);text-align:center;padding:12px 0;font-weight:700">${esc(reward.reward_card)}</div></div>`
+    :`<div class="form-card" style="margin-top:14px"><div class="small">完成全部 3 个任务可获得本世界唯一的永久卡密（${done}/3 已完成）</div></div>`;
+  openSheet(`<div class="sheet-head"><div class="sheet-title">任务</div><button class="close" data-close>×</button></div>${body}${rewardHtml}`);
+}
+
+function showPermanentCard(code){
+  const overlay=document.createElement("div");
+  overlay.className="intro-overlay";
+  overlay.innerHTML=`<div class="persona-card" style="text-align:center">
+    <div style="font-size:48px;margin-bottom:12px">🎉</div>
+    <div class="sheet-title">全部任务完成！</div>
+    <div class="small" style="margin:12px 0">你获得了这个世界唯一的永久卡密</div>
+    <div style="font-family:monospace;font-size:22px;letter-spacing:3px;color:var(--accent);font-weight:700;padding:16px;border:1.5px dashed var(--accent);border-radius:12px;margin:16px 0">${esc(code)}</div>
+    <div class="small" style="margin-bottom:16px">请妥善保存，此卡密永久有效</div>
+    <button id="permClose" class="save-full">继续冒险</button>
+  </div>`;
+  document.body.appendChild(overlay);
+  $("#permClose").onclick=()=>overlay.remove();
+}
 
 function openSheet(content) {
   if (state.sheet) state.sheet.remove();

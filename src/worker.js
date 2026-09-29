@@ -178,6 +178,11 @@ async function createWorld(env,card){
     env.DB.prepare("INSERT INTO events(world_id,title,description,stage,trigger_condition,status) VALUES(?,?,?,?,?,?)").bind(wid,"关系转折","关键人物关系发生明显变化。",3,"关键人物好感达到条件或事件触发","locked")
   ]);
   await env.DB.batch([
+    env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at) VALUES(?,?,?,?,?,?,?)").bind(wid,"主线：揭开世界真相",`在${seed.genre}世界中找到核心秘密，理解这个世界的本质。与关键角色深入互动，收集足够线索。`,"main","active",0,t),
+    env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at) VALUES(?,?,?,?,?,?,?)").bind(wid,"支线：建立羁绊","与至少一个角色建立深厚关系（好感度达到60以上）。","side","active",1,t),
+    env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at) VALUES(?,?,?,?,?,?,?)").bind(wid,"支线：探索未知","解锁至少3条隐藏线索或世界书秘密，探索这个世界的深层规则。","side","active",2,t)
+  ]);
+  await env.DB.batch([
     env.DB.prepare("INSERT INTO worldbooks(world_id,category,title,content,hidden,unlock_condition,sort_order) VALUES(?,?,?,?,?,?,?)").bind(wid,"world","世界背景",background,0,null,1),
     env.DB.prepare("INSERT INTO worldbooks(world_id,category,title,content,hidden,unlock_condition,sort_order) VALUES(?,?,?,?,?,?,?)").bind(wid,"rules","世界规则",rules,0,null,2),
     env.DB.prepare("INSERT INTO worldbooks(world_id,category,title,content,hidden,unlock_condition,sort_order) VALUES(?,?,?,?,?,?,?)").bind(wid,"power","力量体系",power,0,null,3),
@@ -287,7 +292,39 @@ async function applyWorldEngineResult(env,wid,w,structured){
   const entries=await env.DB.prepare("SELECT id,hidden,unlock_condition FROM worldbooks WHERE world_id=?").bind(wid).all();for(const e of entries.results||[]){if(await canUnlockEntry(env,wid,e,h)&&!h.unlocked.includes(Number(e.id)))h.unlocked.push(Number(e.id))}
   await env.DB.prepare("UPDATE worlds SET hidden_state=? WHERE id=?").bind(JSON.stringify(h),wid).run();
   const custom=ps.custom&&typeof ps.custom==="object"?ps.custom:{};const customText=Object.entries(custom).map(([k,v])=>`${k}：${typeof v==="string"?v:JSON.stringify(v)}`).join("\n")||"尚未设置自定义内容。";await env.DB.prepare("UPDATE worldbooks SET content=? WHERE world_id=? AND category='player' AND title='玩家自定义'").bind(customText,wid).run();
-  return {state:h,touchedCharacters:touched};
+  const questResult=await checkQuests(env,wid,h);
+  return {state:h,touchedCharacters:touched,questUpdates:questResult};
+}
+
+async function checkQuests(env,wid,h){
+  const quests=await env.DB.prepare("SELECT id,title,quest_type,status FROM quests WHERE world_id=? AND status='active'").bind(wid).all();
+  const unlockedCount=(h.unlocked||[]).length;
+  const maxAffinity=await env.DB.prepare("SELECT MAX(affinity) n FROM characters WHERE world_id=? AND encountered=1").bind(wid).first();
+  const stage=Number(h.stage||0);
+  const completed=[];
+  for(const q of quests.results||[]){
+    let done=false;
+    if(q.quest_type==="main"&&stage>=5) done=true;
+    if(q.quest_type==="side"&&q.sort_order===1&&Number(maxAffinity?.n||0)>=60) done=true;
+    if(q.quest_type==="side"&&q.sort_order===2&&unlockedCount>=3) done=true;
+    if(done){
+      await env.DB.prepare("UPDATE quests SET status='completed',completed_at=? WHERE id=?").bind(now(),q.id).run();
+      completed.push(q);
+    }
+  }
+  if(completed.length===0) return {completed:[]};
+  const remaining=await env.DB.prepare("SELECT COUNT(*) n FROM quests WHERE world_id=? AND status='active'").bind(wid).first();
+  let permanentCard=null;
+  if(Number(remaining?.n||0)===0){
+    const card=await env.DB.prepare("SELECT * FROM cards WHERE world_id=?").bind(wid).first();
+    if(card){
+      const permCode=randomCode();
+      await env.DB.prepare("INSERT INTO cards(code,duration_seconds,status,created_at,activated_at,expires_at,world_id) VALUES(?,?,?,?,?,?,?)").bind(permCode,DAY*36500,"unused",now(),null,null,wid).run();
+      permanentCard=permCode;
+      await env.DB.prepare("UPDATE quests SET reward_card=? WHERE world_id=? AND status='completed'").bind(permCode,wid).run();
+    }
+  }
+  return {completed,permanentCard};
 }
 
 async function fallbackNarrative(env,wid,w,content){
@@ -322,11 +359,11 @@ export default {
         const b=await req.json();const currentCode=String(b.currentCode||"").trim(),renewalCode=String(b.renewalCode||"").trim();const current=await env.DB.prepare("SELECT * FROM cards WHERE code=? LIMIT 1").bind(currentCode).first();const renewal=await env.DB.prepare("SELECT * FROM cards WHERE code=? LIMIT 1").bind(renewalCode).first();if(!current||!renewal)return json({error:"卡密不存在"},404);if(renewal.status!=="unused")return json({error:"续期卡已使用或不可用"},400);if(current.duration_seconds!==renewal.duration_seconds)return json({error:"续期卡类型必须与原卡完全相同"},400);if(!current.world_id)return json({error:"原卡尚未建立世界，请先激活原卡"},400);const t=now();if(current.expires_at&&Number(current.expires_at)+GRACE<=t){await destroyWorld(env,current.id);return json({error:"原卡已超过5天保留期，世界已销毁"},410)}const expires=Math.max(t,Number(current.expires_at||t))+Number(renewal.duration_seconds);await env.DB.batch([env.DB.prepare("UPDATE cards SET expires_at=?,grace_until=NULL,status='active',renewed_at=? WHERE id=?").bind(expires,t,current.id),env.DB.prepare("UPDATE cards SET status='used',activated_at=?,renewed_at=?,world_id=? WHERE id=?").bind(t,t,current.world_id,renewal.id,current.id)]);const session=await issuePlayerSession(env,{...current,expires_at:expires},current.world_id);return json({ok:true,worldId:current.world_id,sessionToken:session,expiresAt:expires});
       }
       if(p==="/api/world"&&m==="GET"){
-        const wid=Number(u.searchParams.get("id"));const a=await worldAccess(env,req,wid);if(!a.ok)return json({error:a.error},a.status);const w=a.world;const [chars,msgs,events]=await Promise.all([env.DB.prepare("SELECT id,name,sex,age,identity,faction,personality,affinity,encountered,contact,voice_id FROM characters WHERE world_id=? ORDER BY id").bind(wid).all(),env.DB.prepare("SELECT id,character_id,role,content,created_at FROM messages WHERE world_id=? AND channel='story' ORDER BY id DESC LIMIT 100").bind(wid).all(),env.DB.prepare("SELECT id,title,description,stage,status FROM events WHERE world_id=? ORDER BY id").bind(wid).all()]);return json({world:w,characters:chars.results||[],messages:(msgs.results||[]).reverse(),events:events.results||[],labels:labels(w.genre)});
+        const wid=Number(u.searchParams.get("id"));const a=await worldAccess(env,req,wid);if(!a.ok)return json({error:a.error},a.status);const w=a.world;const [chars,msgs,events,quests]=await Promise.all([env.DB.prepare("SELECT id,name,sex,age,identity,faction,personality,affinity,encountered,contact,voice_id FROM characters WHERE world_id=? ORDER BY id").bind(wid).all(),env.DB.prepare("SELECT id,character_id,role,content,created_at FROM messages WHERE world_id=? AND channel='story' ORDER BY id DESC LIMIT 100").bind(wid).all(),env.DB.prepare("SELECT id,title,description,stage,status FROM events WHERE world_id=? ORDER BY id").bind(wid).all(),env.DB.prepare("SELECT id,title,description,quest_type,status,sort_order,reward_card FROM quests WHERE world_id=? ORDER BY sort_order").bind(wid).all()]);return json({world:w,characters:chars.results||[],messages:(msgs.results||[]).reverse(),events:events.results||[],quests:quests.results||[],labels:labels(w.genre)});
       }
       if(p==="/api/ai/test"&&m==="POST"){const b=await req.json();const result=await maybeAI(env,{genre:"test",background:"连接测试",world_rules:"仅回复测试",power_system:"无",current_location:"测试",current_time:"现在",weather:"晴",id:0},"请返回 JSON：{\"narrative\":\"连接成功\",\"primaryCharacterId\":null,\"events\":[],\"encounters\":[],\"affinityChanges\":[],\"worldUpdates\":{},\"unlockClues\":[]}",b.ai||{},{});if(result?.structured||result?.text)return json({ok:true,reply:result.text||result.structured.narrative});return json({ok:false,error:result?.error||"连接失败"},400)}
       if(p==="/api/story/message"&&m==="POST"){
-        const b=await req.json(),wid=Number(b.worldId),content=contentText(b.content);if(!wid||!content)return json({error:"内容不能为空"},400);const a=await worldAccess(env,req,wid);if(!a.ok)return json({error:a.error},a.status);const w=a.world;await env.DB.prepare("INSERT INTO messages(world_id,channel,role,content,created_at) VALUES(?,?,?,?,?)").bind(wid,"story","user",content,now()).run();const generated=await storyReply(env,w,content,b.ai||null);const engine=generated.structured?await applyWorldEngineResult(env,wid,w,generated.structured):{state:safeJsonParse(w.hidden_state,{stage:0}),touchedCharacters:[]};const primary=Number(generated.structured?.primaryCharacterId||engine.touchedCharacters?.[0]?.id||0);await env.DB.prepare("INSERT INTO messages(world_id,character_id,channel,role,content,created_at) VALUES(?,?,?,?,?,?)").bind(wid,primary||null,"story","assistant",generated.text||"世界回应了你的行动。",now()).run();return json({reply:generated.text||"世界回应了你的行动。",character:engine.touchedCharacters?.find(c=>c.id===primary)||engine.touchedCharacters?.[0]||null,hiddenState:engine.state,aiError:generated.error||null});
+        const b=await req.json(),wid=Number(b.worldId),content=contentText(b.content);if(!wid||!content)return json({error:"内容不能为空"},400);const a=await worldAccess(env,req,wid);if(!a.ok)return json({error:a.error},a.status);const w=a.world;await env.DB.prepare("INSERT INTO messages(world_id,channel,role,content,created_at) VALUES(?,?,?,?,?)").bind(wid,"story","user",content,now()).run();const generated=await storyReply(env,w,content,b.ai||null);const engine=generated.structured?await applyWorldEngineResult(env,wid,w,generated.structured):{state:safeJsonParse(w.hidden_state,{stage:0}),touchedCharacters:[],questUpdates:{completed:[],permanentCard:null}};const primary=Number(generated.structured?.primaryCharacterId||engine.touchedCharacters?.[0]?.id||0);await env.DB.prepare("INSERT INTO messages(world_id,character_id,channel,role,content,created_at) VALUES(?,?,?,?,?,?)").bind(wid,primary||null,"story","assistant",generated.text||"世界回应了你的行动。",now()).run();return json({reply:generated.text||"世界回应了你的行动。",character:engine.touchedCharacters?.find(c=>c.id===primary)||engine.touchedCharacters?.[0]||null,hiddenState:engine.state,questUpdates:engine.questUpdates||{completed:[],permanentCard:null},aiError:generated.error||null});
       }
       if(p==="/api/contacts"&&m==="GET"){const wid=Number(u.searchParams.get("worldId"));const a=await worldAccess(env,req,wid);if(!a.ok)return json({error:a.error},a.status);const r=await env.DB.prepare("SELECT id,name,sex,age,identity,faction,personality,affinity,voice_id FROM characters WHERE world_id=? AND contact=1 AND affinity>=30 AND encountered=1 ORDER BY affinity DESC").bind(wid).all();return json({contacts:r.results||[]})}
       if(p==="/api/contact/messages"&&m==="GET"){const wid=Number(u.searchParams.get("worldId")),cid=Number(u.searchParams.get("characterId"));const a=await worldAccess(env,req,wid);if(!a.ok)return json({error:a.error},a.status);const c=await env.DB.prepare("SELECT id,name FROM characters WHERE id=? AND world_id=? AND contact=1 AND affinity>=30 AND encountered=1").bind(cid,wid).first();if(!c)return json({error:"该角色尚未进入通讯录"},400);const r=await env.DB.prepare("SELECT id,role,content,created_at FROM messages WHERE world_id=? AND character_id=? AND channel='contact' ORDER BY id DESC LIMIT 100").bind(wid,cid).all();return json({messages:(r.results||[]).reverse()})}

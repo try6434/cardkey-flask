@@ -153,6 +153,15 @@ button{border:0;background:none;color:inherit;cursor:pointer;touch-action:manipu
 .save-row button.secondary{background:var(--line);color:var(--text)}
 .save-full{width:100%;height:46px;border-radius:12px;background:var(--accent);color:#fff;font-weight:600;margin-top:14px;transition:opacity .15s}
 .save-full:active{opacity:.8}
+.quest-btn{background:none;border:none;font-size:20px;cursor:pointer;padding:4px}
+.intro-overlay{position:fixed;inset:0;z-index:999;background:#000;display:flex;align-items:center;justify-content:center;padding:24px;animation:fadeIn .5s ease}
+.intro-scroll{max-width:420px;text-align:center;color:#fff}
+.intro-title{font-size:28px;font-weight:700;margin-bottom:24px;opacity:0;animation:fadeUp 1.5s .3s forwards}
+.intro-text{font-size:16px;line-height:1.8;opacity:0;animation:fadeUp 2s .8s forwards}
+.intro-skip{margin-top:40px;font-size:13px;color:#666;opacity:0;animation:fadeUp 1.5s 2.5s forwards}
+.persona-card{background:#fff;width:100%;max-width:380px;border-radius:20px;padding:24px;animation:fadeUp .5s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 
 /* 私聊 */
 .contact-chat{display:flex;flex-direction:column;gap:8px}

@@ -126,6 +126,19 @@ CREATE TABLE IF NOT EXISTS player_settings (
   updated_at INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY(world_id) REFERENCES worlds(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS quests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  world_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  quest_type TEXT NOT NULL DEFAULT 'side',
+  status TEXT NOT NULL DEFAULT 'active',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  completed_at INTEGER,
+  reward_card TEXT,
+  FOREIGN KEY(world_id) REFERENCES worlds(id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS seeds (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   category TEXT NOT NULL,
@@ -159,3 +172,4 @@ CREATE INDEX IF NOT EXISTS idx_sessions_world ON player_sessions(world_id,expire
 CREATE INDEX IF NOT EXISTS idx_characters_world_contact ON characters(world_id,contact,affinity);
 CREATE INDEX IF NOT EXISTS idx_messages_world_channel ON messages(world_id,channel,id);
 CREATE INDEX IF NOT EXISTS idx_worldbooks_world_hidden ON worldbooks(world_id,hidden);
+CREATE INDEX IF NOT EXISTS idx_quests_world ON quests(world_id,status);
