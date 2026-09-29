@@ -1,0 +1,96 @@
+const $=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':'&quot;',"'":"&#39;"}[c]));
+const TYPES={"1h":"1小时","5h":"5小时","12h":"12小时","1d":"1天","7d":"7天","15d":"15天","30d":"30天"};
+let token=decodeURIComponent(location.hash.slice(1)||localStorage.getItem("cw_admin_token")||"");
+let tab="dashboard";
+let cache={cards:[],worlds:[],seeds:[],templates:[]};
+if(token)localStorage.setItem("cw_admin_token",token);
+
+async function api(path, options={}){
+  const res=await fetch(path,{...options,headers:{"content-type":"application/json",authorization:`Bearer ${token}`,...(options.headers||{})}});
+  let data=null; try{data=await res.json()}catch{}
+  if(!res.ok)throw new Error(data?.error||`请求失败 ${res.status}`);
+  return data;
+}
+function app(){if(!token){login();return}renderLayout();go(tab)}
+function login(){
+  document.body.innerHTML=`<div class="login"><div class="box"><div class="brand">CARD/WORLD ADMIN</div><h1>管理员后台</h1><div class="muted">管理员认证由 Worker 服务端完成，主页不会展示此入口。</div><form id="loginForm" class="form"><input id="password" type="password" placeholder="管理员密码" required><button>登录</button></form><div id="msg" class="msg"></div></div></div>`;
+  $("#loginForm").addEventListener("submit",async e=>{
+    e.preventDefault();
+    try{
+      const response=await fetch("/api/auth/card",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({code:$("#password").value})});
+      const data=await response.json();
+      if(!response.ok||!data.admin)throw new Error(data?.error||"认证失败");
+      token=data.token;localStorage.setItem("cw_admin_token",token);history.replaceState(null,"","/admin.html");app();
+    }catch(err){$("#msg").textContent=err.message;$("#msg").className="msg err";}
+  });
+}
+function renderLayout(){
+  document.body.innerHTML=`<div class="layout"><aside class="side"><div class="brand">CARD/WORLD ADMIN</div><div class="nav">${[["dashboard","概览"],["cards","卡密管理"],["renew","续期中心"],["worlds","世界管理"],["worldbooks","世界书"],["seeds","种子库"],["templates","人物模板"],["security","安全"]].map(x=>`<button data-tab="${x[0]}">${x[1]}</button>`).join("")}</div><button class="logout" id="logout">退出</button></aside><main class="main"><div class="header"><div><div class="muted">CLOUD ADMIN</div><div class="title" id="title"></div></div><div class="small">管理员会话 24 小时</div></div><div id="content" class="content"></div></main></div>`;
+  document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>go(b.dataset.tab));
+  $("#logout").onclick=()=>{localStorage.removeItem("cw_admin_token");location.href="/"};
+}
+async function go(t){
+  tab=t;document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===t));
+  $("#title").textContent={dashboard:"概览",cards:"卡密管理",renew:"续期中心",worlds:"世界管理",worldbooks:"世界书",seeds:"种子库",templates:"人物模板",security:"安全"}[t];
+  try{if(t==="dashboard")return await dashboard();if(t==="cards")return await cards();if(t==="renew")return renew();if(t==="worlds")return await worlds();if(t==="worldbooks")return await worldbooks();if(t==="seeds")return await seeds();if(t==="templates")return await templates();if(t==="security")return security()}catch(e){$("#content").innerHTML=`<div class="panel"><div class="msg err">${esc(e.message)}</div></div>`}
+}
+async function dashboard(){const d=await api("/api/admin/dashboard");$("#content").innerHTML=`<div class="stats"><div class="panel stat"><div class="small">全部卡密</div><div class="n">${d.cards}</div></div><div class="panel stat"><div class="small">当前激活</div><div class="n">${d.activeCards}</div></div><div class="panel stat"><div class="small">活跃世界</div><div class="n">${d.worlds}</div></div><div class="panel stat"><div class="small">角色总数</div><div class="n">${d.characters}</div></div></div><div class="panel"><div class="toolbar"><div><b>系统状态</b><div class="muted">D1、Worker、定时清理负责生命周期；主页没有管理员入口。</div></div><button id="cleanupBtn">立即执行生命周期清理</button></div></div>`;$("#cleanupBtn").onclick=async()=>{await api("/api/admin/cleanup",{method:"POST"});alert("清理已执行");dashboard()}}
+async function cards(query=""){
+  const d=await api(`/api/admin/cards${query?`?q=${encodeURIComponent(query)}`:""}`);cache.cards=d.cards||[];
+  $("#content").innerHTML=`<div class="panel"><div class="toolbar"><div class="actions"><select id="newType">${Object.entries(TYPES).map(x=>`<option value="${x[0]}">${x[1]}</option>`).join("")}</select><input id="count" type="number" min="1" max="200" value="1" style="width:90px"><button id="gen">生成卡密</button></div><div class="actions"><input id="search" placeholder="搜索卡密" style="max-width:220px"><button class="secondary" id="reload">刷新</button></div></div><div id="genmsg" class="msg"></div></div><div class="panel"><div class="table"><table><thead><tr><th>ID</th><th>卡密</th><th>类型</th><th>状态</th><th>世界</th><th>到期</th><th>操作</th></tr></thead><tbody>${cache.cards.map(c=>`<tr><td>${c.id}</td><td><b>${esc(c.code)}</b></td><td>${durationName(c.duration_seconds)}</td><td>${esc(c.status)}</td><td>${c.world_id||"—"}</td><td>${c.expires_at?new Date(c.expires_at*1000).toLocaleString():"—"}</td><td><div class="actions">${c.status==='frozen'?`<button data-status="active" data-id="${c.id}">解冻</button>`:`<button class="secondary" data-status="frozen" data-id="${c.id}">冻结</button><button class="danger" data-revoke="${c.id}">撤销</button>`}</div></td></tr>`).join("")}</tbody></table></div></div>`;
+  $("#gen").onclick=async()=>{const data=await api("/api/admin/cards",{method:"POST",body:JSON.stringify({duration:$("#newType").value,count:Number($("#count").value)})});$("#genmsg").textContent=`已生成 ${data.cards.length} 张；首张 ${data.cards[0].code}`;cards()};
+  $("#reload").onclick=()=>cards($("#search").value.trim());
+  $("#search").onkeydown=e=>{if(e.key==='Enter')cards(e.target.value.trim())};
+  document.querySelectorAll("[data-status]").forEach(b=>b.onclick=async()=>{await api("/api/admin/cards/status",{method:"POST",body:JSON.stringify({cardId:Number(b.dataset.id),status:b.dataset.status})});cards()});document.querySelectorAll("[data-revoke]").forEach(b=>b.onclick=async()=>{if(confirm("撤销后卡密及绑定世界都会删除，确定？")){await api("/api/admin/cards/revoke",{method:"POST",body:JSON.stringify({cardId:Number(b.dataset.revoke)})});cards()}});
+}
+function durationName(s){return Object.entries({3600:"1小时",18000:"5小时",43200:"12小时",86400:"1天",604800:"7天",1296000:"15天",2592000:"30天"}).find(x=>Number(x[0])===Number(s))?.[1]||String(s)}
+function renew(){
+  $("#content").innerHTML=`<div class="panel"><h3>续期中心</h3><div class="muted">输入原卡与同类型新卡。系统只延长原世界，不生成新世界；新卡会标记为 used。</div><div class="grid2" style="margin-top:12px"><input id="currentCode" placeholder="原卡密"><input id="renewCode" placeholder="同类型续期卡密"></div><button id="renewGo" style="margin-top:12px">执行续期</button><div id="renewMsg" class="msg"></div></div>`;
+  $("#renewGo").onclick=async()=>{try{const d=await api('/api/admin/cards/renew',{method:'POST',body:JSON.stringify({currentCode:$("#currentCode").value.trim(),renewalCode:$("#renewCode").value.trim()})});$("#renewMsg").textContent=`续期成功，新到期时间：${new Date(d.expiresAt*1000).toLocaleString()}`;$("#renewMsg").className='msg ok';}catch(e){$("#renewMsg").textContent=e.message;$("#renewMsg").className='msg err'}};
+}
+
+async function worlds(){const d=await api("/api/admin/worlds");cache.worlds=d.worlds||[];$("#content").innerHTML=`<div class="panel"><div class="table"><table><thead><tr><th>ID</th><th>名称</th><th>类型</th><th>剧情</th><th>位置</th><th>卡密</th><th>状态</th><th>操作</th></tr></thead><tbody>${cache.worlds.map(w=>`<tr><td>${w.id}</td><td><b>${esc(w.name)}</b></td><td>${esc(w.genre)}</td><td>${esc(w.plot_type)}</td><td>${esc(w.current_location)}</td><td>${esc(w.code||"—")}</td><td>${esc(w.status)}</td><td><div class="actions"><button class="secondary" data-detail="${w.id}">详情</button><button class="secondary" data-worldstatus="${w.id}" data-status="${w.status==='active'?'paused':'active'}">${w.status==='active'?'暂停':'恢复'}</button><button class="danger" data-del="${w.id}">删除</button></div></td></tr>`).join("")}</tbody></table></div></div>`;document.querySelectorAll("[data-detail]").forEach(b=>b.onclick=()=>worldDetail(b.dataset.detail)); document.querySelectorAll("[data-worldstatus]").forEach(b=>b.onclick=async()=>{await api("/api/admin/worlds/status",{method:"POST",body:JSON.stringify({worldId:Number(b.dataset.worldstatus),status:b.dataset.status})});worlds()});document.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{if(confirm("删除后世界、角色、事件、消息、世界书都会删除，确定？")){await api("/api/admin/worlds/delete",{method:"POST",body:JSON.stringify({worldId:Number(b.dataset.del)})});worlds()}})}
+async function worldDetail(id){const d=await api(`/api/admin/worlds/detail?id=${id}`);openModal(`<h3>${esc(d.world.name)}</h3><div class="muted">${esc(d.world.background)}</div><div class="small" style="margin-top:8px">位置：${esc(d.world.current_location)} · 时间：${esc(d.world.current_time)} · 天气：${esc(d.world.weather)} · 阶段：${esc((JSON.parse(d.world.hidden_state||"{}").stage)||0)}</div><div class="section-title">角色 ${d.characters.length}</div>${d.characters.map(c=>`<div class="seed"><h4>${esc(c.name)} · 好感 ${c.affinity}</h4><div class="small">${esc(c.identity)} · ${esc(c.faction)} · ${esc(c.personality)}</div><div class="small">遭遇：${c.encountered?"是":"否"} · 通讯录：${c.contact?"是":"否"}</div></div>`).join("")}`)}
+function openModal(html){const b=document.createElement("div");b.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:99;display:grid;place-items:center;padding:18px";b.innerHTML=`<div class="box" style="max-height:88dvh;overflow:auto;width:min(720px,100%);position:relative"><button id="modalClose" style="position:absolute;right:14px;top:14px;background:#eee;color:#111">×</button>${html}</div>`;document.body.appendChild(b);$("#modalClose",b).onclick=()=>b.remove()}
+
+async function worldbooks(){
+  const d=await api("/api/admin/worlds");
+  cache.worlds=d.worlds||[];
+  $("#content").innerHTML=`<div class="panel"><div class="muted">选择一个世界管理其世界书条目。隐藏条目可设置解锁条件。</div><div class="section-title">世界</div>${cache.worlds.map(w=>`<button class="seed" style="width:100%;text-align:left" data-wbworld="${w.id}"><h4>${esc(w.name)}</h4><div class="small">${esc(w.genre)} · ${esc(w.code||"—")}</div></button>`).join("")}</div>`;
+  document.querySelectorAll("[data-wbworld]").forEach(b=>b.onclick=()=>editWorldbooks(Number(b.dataset.wbworld)));
+}
+async function editWorldbooks(worldId){
+  const d=await api(`/api/admin/worldbooks?worldId=${worldId}`);
+  const rows=d.worldbooks||[];
+  $("#content").innerHTML=`<div class="panel"><div class="toolbar"><button class="secondary" id="backWb">返回世界列表</button><button id="addWb">添加条目</button></div>${rows.map(r=>`<div class="seed"><div class="toolbar"><div><h4>${esc(r.title)} ${r.hidden?'<span class="tag">隐藏</span>':''}</h4><div class="small">${esc(r.category)} · ${esc(r.unlock_condition||"无条件")}</div><div class="small" style="margin-top:6px;white-space:pre-wrap">${esc(r.content)}</div></div><div class="actions"><button class="secondary" data-editwb="${r.id}">编辑</button><button class="danger" data-delwb="${r.id}">删除</button></div></div></div>`).join("")||'<div class="muted">暂无条目</div>'}</div>`;
+  $("#backWb").onclick=worldbooks;
+  $("#addWb").onclick=()=>worldbookForm(worldId,{});
+  document.querySelectorAll("[data-editwb]").forEach(b=>b.onclick=async()=>{const r=rows.find(x=>x.id==b.dataset.editwb);worldbookForm(worldId,r)});
+  document.querySelectorAll("[data-delwb]").forEach(b=>b.onclick=async()=>{if(confirm("删除条目？")){await api(`/api/admin/worldbooks?id=${b.dataset.delwb}`,{method:"DELETE"});editWorldbooks(worldId)}});
+}
+function worldbookForm(worldId,r){
+  openModal(`<h3>${r.id?"编辑":"添加"}世界书</h3><div class="grid2"><input id="wbCat" placeholder="分类" value="${esc(r.category||"world")}"><input id="wbTitle" placeholder="标题" value="${esc(r.title||"")}"><textarea id="wbContent" class="full" placeholder="内容">${esc(r.content||"")}</textarea><label class="small"><input id="wbHidden" type="checkbox" ${r.hidden?"checked":""}> 隐藏</label><input id="wbUnlock" placeholder="解锁条件，如 stage >= 2" value="${esc(r.unlock_condition||"")}"><input id="wbSort" type="number" placeholder="排序" value="${Number(r.sort_order||0)}"></div><button id="wbSave" style="margin-top:12px">保存</button>`);
+  $("#wbSave").onclick=async()=>{const b={id:r.id,worldId,category:$("#wbCat").value,title:$("#wbTitle").value,content:$("#wbContent").value,hidden:$("#wbHidden").checked?1:0,unlock_condition:$("#wbUnlock").value,sort_order:Number($("#wbSort").value||0)};await api("/api/admin/worldbooks",{method:r.id?"PUT":"POST",body:JSON.stringify(b)});document.querySelectorAll("body > div").forEach(x=>{if(x.style?.zIndex==="99")x.remove()});editWorldbooks(worldId)};
+}
+async function seeds(){const d=await api("/api/admin/seeds");cache.seeds=d.seeds||[];
+  const form=(s={})=>openModal(`<h3>${s.id?"编辑":"添加"}种子</h3><div class="grid2"><input id="sc" placeholder="分类：genre / character / relationship / plot / event" value="${esc(s.category||"")}"><input id="sn" placeholder="名称" value="${esc(s.name||"")}"><textarea id="sx" class="full" placeholder="种子内容">${esc(s.content||"")}</textarea><label class="small"><input id="se" type="checkbox" ${s.enabled!==0?"checked":""}> 启用</label></div><button id="saveSeed" style="margin-top:12px">保存</button>`);
+  $("#content").innerHTML=`<div class="panel"><button id="addSeed">添加种子</button></div><div class="panel">${cache.seeds.map(s=>`<div class="seed"><div class="toolbar"><div><h4>${esc(s.name)} <span class="tag">${esc(s.category)}</span></h4><div class="small">${esc(s.content)}</div></div><div class="actions"><button class="secondary" data-editseed="${s.id}">编辑</button><button class="secondary" data-toggle="${s.id}">${s.enabled?"停用":"启用"}</button><button class="danger" data-delseed="${s.id}">删除</button></div></div></div>`).join("")||'<div class="muted">暂无种子</div>'}</div>`;
+  $("#addSeed").onclick=()=>{form({});$("#saveSeed").onclick=async()=>{await api("/api/admin/seeds",{method:"POST",body:JSON.stringify({category:$("#sc").value.trim(),name:$("#sn").value.trim(),content:$("#sx").value,enabled:$("#se").checked?1:0})});location.reload()}};
+  document.querySelectorAll("[data-editseed]").forEach(b=>b.onclick=()=>{const x=cache.seeds.find(z=>z.id==b.dataset.editseed);form(x);$("#saveSeed").onclick=async()=>{await api("/api/admin/seeds",{method:"PUT",body:JSON.stringify({...x,category:$("#sc").value.trim(),name:$("#sn").value.trim(),content:$("#sx").value,enabled:$("#se").checked?1:0})});document.querySelectorAll("body > div").forEach(x=>x.style?.zIndex==="99"&&x.remove());seeds()}});
+  document.querySelectorAll("[data-toggle]").forEach(b=>b.onclick=async()=>{const x=cache.seeds.find(z=>z.id==b.dataset.toggle);await api("/api/admin/seeds",{method:"PUT",body:JSON.stringify({...x,enabled:x.enabled?0:1})});seeds()});
+  document.querySelectorAll("[data-delseed]").forEach(b=>b.onclick=async()=>{if(confirm("删除这个种子？")){await api(`/api/admin/seeds?id=${b.dataset.delseed}`,{method:"DELETE"});seeds()}});
+}
+
+async function templates(){const d=await api("/api/admin/templates");cache.templates=d.templates||[];
+  const form=(t={})=>openModal(`<h3>${t.id?"编辑":"添加"}人物模板</h3><div class="grid2"><input id="tn" placeholder="姓名" value="${esc(t.name||"")}"><input id="ts" placeholder="性别" value="${esc(t.sex||"")}"><input id="ta" type="number" placeholder="年龄" value="${t.age||""}"><input id="ti" placeholder="身份" value="${esc(t.identity||"")}"><input id="tf" placeholder="势力" value="${esc(t.faction||"")}"><input id="tp" placeholder="性格" value="${esc(t.personality||"")}"><textarea id="tb" placeholder="背景">${esc(t.background||"")}</textarea><textarea id="tpast" placeholder="过去">${esc(t.past||"")}</textarea><textarea id="tg" placeholder="目标">${esc(t.goals||"")}</textarea><input id="tatt" placeholder="初始态度" value="${esc(t.initial_attitude||"")}"><input id="tarc" placeholder="故事线" value="${esc(t.story_arc||"")}"><textarea id="tsecret" placeholder="隐藏秘密">${esc(t.hidden_secret||"")}</textarea><input id="tclue" placeholder="线索解锁条件，如 affinity:1 >= 60" value="${esc(t.clue_condition||"")}"><input id="tenc" placeholder="遭遇条件" value="${esc(t.encounter_condition||"")}"><textarea id="tcr" class="full" placeholder="聊天规则">${esc(t.chat_rules||"")}</textarea><input id="tvoice" placeholder="默认 TTS voice_id（可空）" value="${esc(t.voice_id||"")}"></div><button id="saveT" style="margin-top:12px">保存</button>`);
+  $("#content").innerHTML=`<div class="panel"><button id="addT">添加人物模板</button></div><div class="panel">${cache.templates.map(t=>`<div class="seed"><div class="toolbar"><div><h4>${esc(t.name)} · ${esc(t.identity)}</h4><div class="small">${esc(t.personality)} · ${esc(t.faction)} · ${t.age}岁</div><div class="small">${esc(t.background)}</div></div><div class="actions"><button class="secondary" data-editt="${t.id}">编辑</button><button class="danger" data-delt="${t.id}">删除</button></div></div></div>`).join("")||'<div class="muted">暂无模板</div>'}</div>`;
+  $("#addT").onclick=()=>{form({});$("#saveT").onclick=async()=>{await api("/api/admin/templates",{method:"POST",body:JSON.stringify(readTemplate())});closeTopModal();templates()}};
+  document.querySelectorAll("[data-editt]").forEach(b=>b.onclick=()=>{const x=cache.templates.find(z=>z.id==b.dataset.editt);form(x);$("#saveT").onclick=async()=>{await api("/api/admin/templates",{method:"PUT",body:JSON.stringify({id:x.id,...readTemplate()})});closeTopModal();templates()}});
+  document.querySelectorAll("[data-delt]").forEach(b=>b.onclick=async()=>{if(confirm("删除这个人物模板？")){await api(`/api/admin/templates?id=${b.dataset.delt}`,{method:"DELETE"});templates()}});
+}
+function readTemplate(){return {name:$("#tn").value,sex:$("#ts").value,age:Number($("#ta").value),identity:$("#ti").value,faction:$("#tf").value,personality:$("#tp").value,background:$("#tb").value,past:$("#tpast").value,goals:$("#tg").value,initial_attitude:$("#tatt").value,story_arc:$("#tarc").value,hidden_secret:$("#tsecret").value,clue_condition:$("#tclue").value,encounter_condition:$("#tenc").value,chat_rules:$("#tcr").value,voice_id:$("#tvoice").value}}
+function closeTopModal(){document.querySelectorAll("body > div").forEach(x=>x.style?.zIndex==="99"&&x.remove())}
+
+function security(){$("#content").innerHTML=`<div class="panel"><h3>修改管理员密码</h3><div class="muted">正式部署前请使用强密码。修改成功后当前会话会失效。</div><div class="grid2" style="margin-top:12px"><input id="old" type="password" placeholder="当前密码"><input id="next" type="password" placeholder="新密码（至少10位）"></div><button id="change" style="margin-top:12px">保存新密码</button><div id="sm" class="msg"></div></div>`;$("#change").onclick=async()=>{try{await api("/api/admin/security/password",{method:"POST",body:JSON.stringify({current:$("#old").value,next:$("#next").value})});localStorage.removeItem("cw_admin_token");alert("修改成功，请重新登录");location.href="/admin.html"}catch(e){$("#sm").textContent=e.message;$("#sm").className="msg err"}}}
+app();

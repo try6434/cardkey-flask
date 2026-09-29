@@ -1,0 +1,16 @@
+{
+  "name": "cardworld-complete-v4",
+  "version": "4.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute cardworld --local --file=schema.sql",
+    "db:seed": "wrangler d1 execute cardworld --local --file=seed.sql",
+    "test": "node tests/smoke.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.143.0"
+  }
+}
