@@ -68,26 +68,40 @@ function renderEntry() {
 
 function renderLogin() {
   $("#app").innerHTML = `
-    <div class="screen">
-      <div class="center-card">
-        <div class="brand">CARD<span>/</span>WORLD</div>
-        <div class="eyebrow" style="margin-top:28px">ENTER YOUR WORLD</div>
-        <div class="title">输入卡密</div>
-        <div class="subtitle">输入你的卡密进入属于你的世界。</div>
-        <form id="cardForm" class="form">
-          <input id="cardCode" class="input" autocomplete="off" autocapitalize="characters" placeholder="输入卡密" required>
-          <button class="primary">进入世界</button>
-          <div id="cardMsg" class="msg"></div>
-        </form>
+    <div class="screen login-screen">
+      <div class="login-wrap">
+        <div class="login-title">CardWorld</div>
+        <div class="login-sub">请输入卡密进入世界</div>
+        <div class="login-card">
+          <form id="cardForm">
+            <input id="cardCode" class="login-input" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="输入卡密" required>
+            <div id="cardMsg" class="err-tip"></div>
+            <button id="loginBtn" class="login-btn" type="submit">进入世界</button>
+          </form>
+        </div>
         <div id="renewBox" class="renew-box hidden"></div>
       </div>
     </div>`;
 
+  const input = $("#cardCode");
+  const msg = $("#cardMsg");
+  const btn = $("#loginBtn");
+
+  input.addEventListener("input", () => {
+    input.value = input.value.toUpperCase().replace(/\s/g, "");
+    msg.textContent = "";
+    msg.classList.remove("show");
+    input.classList.remove("shake");
+  });
+
   $("#cardForm").onsubmit = async e => {
     e.preventDefault();
-    const code = $("#cardCode").value.trim();
-    const msg = $("#cardMsg");
-    msg.textContent = "正在验证…";
+    const code = input.value.trim().toUpperCase();
+    if (!code) return;
+    msg.textContent = "";
+    msg.classList.remove("show");
+    btn.disabled = true;
+    btn.textContent = "验证中…";
     try {
       const data = await api("/api/auth/card", { method: "POST", body: JSON.stringify({ code }) });
       if (data.admin) {
@@ -99,13 +113,19 @@ function renderLogin() {
       state.labels = data.labels || state.labels;
       await loadWorld();
     } catch (err) {
-      msg.textContent = err.message;
+      btn.disabled = false;
+      btn.textContent = "进入世界";
+      msg.textContent = err.message || "卡密无效";
+      msg.classList.add("show");
+      input.classList.add("shake");
+      setTimeout(() => input.classList.remove("shake"), 250);
       if (err.data?.renewalRequired) {
         msg.textContent = "卡密已到期，请使用同类型卡续期。";
         showRenewal(err.data.duration_seconds, code);
       }
     }
   };
+  setTimeout(() => input.focus(), 100);
 }
 
 function durationName(seconds){return ({3600:"1小时",18000:"5小时",43200:"12小时",86400:"1天",604800:"7天",1296000:"15天",2592000:"30天"})[Number(seconds)] || "同类型";}
