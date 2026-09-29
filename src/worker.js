@@ -179,7 +179,7 @@ async function createWorld(env,card){
   ]);
   await env.DB.batch([
     env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at) VALUES(?,?,?,?,?,?,?)").bind(wid,"主线：揭开世界真相",`在${seed.genre}世界中找到核心秘密，理解这个世界的本质。与关键角色深入互动，收集足够线索。`,"main","active",0,t),
-    env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at) VALUES(?,?,?,?,?,?,?)").bind(wid,"支线：建立羁绊","与至少一个角色建立深厚关系（好感度达到60以上）。","side","active",1,t),
+    env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at) VALUES(?,?,?,?,?,?,?)").bind(wid,"支线：沉沦之夜","与至少一个角色堕入危险而禁忌的亲密关系（好感度达到60以上）。这条线将带你走向黑暗、占有欲与欲望交织的深渊。","side","active",1,t),
     env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at) VALUES(?,?,?,?,?,?,?)").bind(wid,"支线：探索未知","解锁至少3条隐藏线索或世界书秘密，探索这个世界的深层规则。","side","active",2,t)
   ]);
   await env.DB.batch([
