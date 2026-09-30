@@ -675,6 +675,14 @@ async function showIntro(){
     if(autoTimer)clearTimeout(autoTimer);
     overlay.remove();showPersonaForm();
   });
+  // 双击黑色空白处跳过开场
+  overlay.addEventListener("dblclick",(e)=>{
+    if(e.target.closest(".intro-crawl"))return; // 双击文字区域不跳过
+    if(autoTimer)clearTimeout(autoTimer);
+    overlay.remove();showPersonaForm();
+  });
+  // 提示可双击跳过
+  setTimeout(()=>{if(!finished&&overlay.parentNode){const hint=document.createElement("div");hint.style.cssText="position:absolute;bottom:40px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.3);font-size:12px;pointer-events:none";hint.textContent="双击空白处可跳过";overlay.appendChild(hint);}},3000);
 }
 
 async function aiRandomizePersona(world,missing){
