@@ -255,10 +255,12 @@ function bindWorldUI() {
 function focusStory() { setTimeout(() => $("#storyInput")?.focus(), 40); }
 function scrollBottom() { setTimeout(() => { const s = $("#story"); if (s) s.scrollTop = s.scrollHeight; }, 40); }
 
+function ownAPIReady() { const a=state.ai||{}; return !!(a.endpoint&&a.key&&a.model); }
 async function sendStory() {
   const input = $("#storyInput");
   const content = input.value.trim();
   if (!content || input.disabled) return;
+  if (!ownAPIReady()) { alert("开始剧情前，请先在「API 设置」中配置你自己的接口。"); openAPI(); return; }
   input.disabled = true;
   try {
     const data = await api("/api/story/message", {
@@ -303,6 +305,7 @@ async function sendContact() {
   const contact = state.activeContact;
   const content = input.value.trim();
   if (!content || !contact) return;
+  if (!ownAPIReady()) { alert("私聊前，请先在「API 设置」中配置你自己的接口。"); openAPI(); return; }
   input.disabled = true;
   try {
     const data = await api("/api/contact/message", { method: "POST", body: JSON.stringify({ worldId: state.worldId, characterId: contact.id, content, ai: state.ai.endpoint ? state.ai : null }) });
@@ -369,14 +372,15 @@ async function openBackpack() {
 async function openAPI() {
   openSheet(`<div class="sheet-head"><div class="sheet-title">API 设置</div><button class="close" data-close>×</button></div>
     <div class="form-card"><div class="contact-name">AI 接口</div>
-      <div class="small" style="margin:6px 0 12px">兼容 OpenAI Chat Completions 的 HTTPS 接口。Key 只存在你当前浏览器，不上传服务器。</div>
-      <div class="field"><label>API 地址</label><input id="aiEndpoint" value="${esc(state.ai.endpoint)}" placeholder="https://api.example.com/v1/chat/completions"></div>
+      <div class="small" style="margin:6px 0 12px">开始剧情前必须配置你自己的 AI 接口，三项都要填。Key 只存在本机，不上传服务器。地址填到 <b>/v1</b> 即可，系统会自动补全。</div>
+      <div class="field"><label>API 地址</label><input id="aiEndpoint" value="${esc(state.ai.endpoint)}" placeholder="https://api.siliconflow.cn/v1"></div>
       <div class="field"><label>API Key</label><input id="aiKey" type="password" value="${esc(state.ai.key)}" placeholder="sk-…"></div>
-      <div class="field"><label>模型</label><input id="aiModel" value="${esc(state.ai.model)}" placeholder="模型名称"></div>
-      <div class="save-row"><button id="saveAI">保存</button><button class="secondary" id="testAI">测试连接</button></div>
+      <div class="field"><label>模型</label><input id="aiModel" value="${esc(state.ai.model)}" placeholder="例如 Qwen/Qwen2.5-72B-Instruct"></div>
+      <div class="save-row"><button id="saveAI">保存</button><button class="secondary" id="testAI">测试连接</button><button class="secondary" id="resetAI">清空</button></div>
       <div id="aiTestMsg" class="small" style="margin-top:8px"></div>
     </div>`);
   $("#saveAI").onclick = () => { state.ai={endpoint:$("#aiEndpoint").value.trim(),key:$("#aiKey").value,model:$("#aiModel").value.trim()}; save(); $("#aiTestMsg").textContent="已保存到本机"; };
+  $("#resetAI").onclick = () => { state.ai={endpoint:"",key:"",model:""}; save(); $("#aiEndpoint").value="";$("#aiKey").value="";$("#aiModel").value=""; $("#aiTestMsg").textContent="已清空，请重新填写你自己的接口"; };
   $("#testAI").onclick = testAI;
 }
 

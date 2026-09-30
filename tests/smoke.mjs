@@ -56,19 +56,19 @@ r=await call('/api/admin/cards',{method:'POST',token:admin,body:{duration:'5h',c
 r=await call('/api/auth/card',{method:'POST',body:{code:card1}});d=await data(r);ok(r.status===200&&d.worldId&&d.sessionToken,'activation/session failed');const wid=d.worldId, session=d.sessionToken;
 r=await call(`/api/world?id=${wid}`);ok(r.status===401,'world endpoint bypassed session');
 r=await call(`/api/world?id=${wid}`,{token:session});d=await data(r);ok(r.status===200&&d.characters.length===9,'world load/character count failed');targetCharId=d.characters[0].id;
-// 4) No AI fallback must NOT fake an encounter
-r=await call('/api/story/message',{method:'POST',token:session,body:{worldId:wid,content:'我先观察四周。'}});d=await data(r);ok(r.status===200,'story fallback failed');
-let chk=db.prepare('SELECT COUNT(*) n FROM characters WHERE world_id=? AND encountered=1').get(wid);ok(Number(chk.n)===0,'fallback falsely created encounter');
+// 4) 未配置自己的 API => 拒绝开始（纯 BYOK），且不得制造遭遇
+r=await call('/api/story/message',{method:'POST',token:session,body:{worldId:wid,content:'我先观察四周。'}});d=await data(r);ok(r.status===400&&d.needApi,'missing own API should be blocked');
+let chk=db.prepare('SELECT COUNT(*) n FROM characters WHERE world_id=? AND encountered=1').get(wid);ok(Number(chk.n)===0,'blocked request must not create encounter');
 // 5) Structured AI real encounter => affinity 30/contact 1
 db.prepare('UPDATE characters SET affinity=0 WHERE id=?').run(targetCharId); // normalize initial affinity
-aiMode='encounter';r=await call('/api/story/message',{method:'POST',token:session,body:{worldId:wid,content:'我朝前走去，和眼前的人真正见面。',ai:{endpoint:'https://mock.ai/chat',model:'mock'}}});d=await data(r);ok(r.status===200&&d.character?.id===targetCharId,'structured encounter not applied');
+aiMode='encounter';r=await call('/api/story/message',{method:'POST',token:session,body:{worldId:wid,content:'我朝前走去，和眼前的人真正见面。',ai:{endpoint:'https://mock.ai/chat',key:'mock',model:'mock'}}});d=await data(r);ok(r.status===200&&d.character?.id===targetCharId,'structured encounter not applied');
 chk=db.prepare('SELECT encountered,affinity,contact FROM characters WHERE id=?').get(targetCharId);ok(Number(chk.encountered)===1&&Number(chk.affinity)===30&&Number(chk.contact)===1,'encounter/contact state wrong');
 r=await call(`/api/contacts?worldId=${wid}`,{token:session});d=await data(r);ok(d.contacts.length===1&&d.contacts[0].id===targetCharId,'contacts did not reflect encounter+30');
 // 6) Stage/affinity unlock
-aiMode='boost';r=await call('/api/story/message',{method:'POST',token:session,body:{worldId:wid,content:'我认真帮助对方处理眼前的问题。',ai:{endpoint:'https://mock.ai/chat',model:'mock'}}});ok(r.status===200,'boost story failed');
+aiMode='boost';r=await call('/api/story/message',{method:'POST',token:session,body:{worldId:wid,content:'我认真帮助对方处理眼前的问题。',ai:{endpoint:'https://mock.ai/chat',key:'mock',model:'mock'}}});ok(r.status===200,'boost story failed');
 r=await call(`/api/worldbook?worldId=${wid}`,{token:session});d=await data(r);ok(d.entries.some(x=>x.title==='隐藏线索Ⅰ'),'stage 2 clue did not unlock');ok(d.entries.some(x=>x.title==='隐藏线索Ⅱ'),'affinity 60 clue did not unlock');
 // 7) Contact chat cannot create new encounter for another character
-r=await call('/api/contact/message',{method:'POST',token:session,body:{worldId:wid,characterId:targetCharId,content:'你好',ai:{endpoint:'https://mock.ai/chat',model:'mock'}}});ok(r.status===200,'contact chat failed');chk=db.prepare('SELECT encountered,contact,affinity FROM characters WHERE id=?').get(targetCharId);ok(Number(chk.encountered)===1&&Number(chk.contact)===1,'contact chat broke state');
+r=await call('/api/contact/message',{method:'POST',token:session,body:{worldId:wid,characterId:targetCharId,content:'你好',ai:{endpoint:'https://mock.ai/chat',key:'mock',model:'mock'}}});ok(r.status===200,'contact chat failed');chk=db.prepare('SELECT encountered,contact,affinity FROM characters WHERE id=?').get(targetCharId);ok(Number(chk.encountered)===1&&Number(chk.contact)===1,'contact chat broke state');
 // 8) If affinity reaches 0 contact disappears but encounter remains
 db.prepare('UPDATE characters SET affinity=0,contact=0 WHERE id=?').run(targetCharId);r=await call(`/api/contacts?worldId=${wid}`,{token:session});d=await data(r);ok(d.contacts.length===0,'contact not removed at affinity 0');chk=db.prepare('SELECT encountered FROM characters WHERE id=?').get(targetCharId);ok(Number(chk.encountered)===1,'encounter incorrectly cleared');
 // 9) Renewal preserves world and consumes same-type new card
