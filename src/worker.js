@@ -181,11 +181,7 @@ async function createWorld(env,card){
     env.DB.prepare("INSERT INTO events(world_id,title,description,stage,trigger_condition,status) VALUES(?,?,?,?,?,?)").bind(wid,"隐藏线索出现","世界中一条此前不可见的信息进入可调查阶段。",2,"阶段达到2","locked"),
     env.DB.prepare("INSERT INTO events(world_id,title,description,stage,trigger_condition,status) VALUES(?,?,?,?,?,?)").bind(wid,"关系转折","关键人物关系发生明显变化。",3,"关键人物好感达到条件或事件触发","locked")
   ]);
-  await env.DB.batch([
-    env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at) VALUES(?,?,?,?,?,?,?)").bind(wid,"主线：揭开世界真相",`在${seed.genre}世界中找到核心秘密，理解这个世界的本质。与关键角色深入互动，收集足够线索。`,"main","active",0,t),
-    env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at) VALUES(?,?,?,?,?,?,?)").bind(wid,"支线：沉沦之夜","与至少一个角色同时达到极度爱恋（好感≥90）和极度敌意（负面≥90），堕入爱恨交织的黑暗深渊。","side","active",1,t),
-    env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at) VALUES(?,?,?,?,?,?,?)").bind(wid,"支线：探索未知","解锁至少3条隐藏线索或世界书秘密，探索这个世界的深层规则。","side","active",2,t)
-  ]);
+  // 任务不再硬编码，由玩家端调用 /api/quests/generate 通过 AI 根据世界动态生成
   await env.DB.batch([
     env.DB.prepare("INSERT INTO worldbooks(world_id,category,title,content,hidden,unlock_condition,sort_order) VALUES(?,?,?,?,?,?,?)").bind(wid,"world","世界背景",background,0,null,1),
     env.DB.prepare("INSERT INTO worldbooks(world_id,category,title,content,hidden,unlock_condition,sort_order) VALUES(?,?,?,?,?,?,?)").bind(wid,"rules","世界规则",rules,0,null,2),
@@ -554,6 +550,43 @@ async function callPlayerAI(env,world,instruction,ai,context={}){const endpoint=
 async function callAdminAI(env,prompt,options={}){const row=await env.DB.prepare("SELECT ai_endpoint,ai_api_key,ai_model FROM admin_settings WHERE id=1").first();const endpoint=normalizeAIEndpoint(row?.ai_endpoint);const apiKey=String(row?.ai_api_key||"").trim();const model=String(row?.ai_model||"").trim();if(!(endpoint&&apiKey&&model))return {error:"管理端 AI 未配置"};const sys=options.system||"你是 CardWorld 管理端种子生成器。只输出合法 JSON，不输出解释。";const r=await postChatAI(endpoint,apiKey,model,[{role:"system",content:sys},{role:"user",content:prompt}],options.temperature||0.7,options.timeout||25000);if(r.error)return r;return {raw:r.raw,data:r.data};
 }
 
+// AI 根据世界动态生成3个任务（1主线+2支线，其中一条支线为成人向）
+async function generateQuestsAI(env,wid,ai){
+  const endpoint=normalizeAIEndpoint(ai?.endpoint);const apiKey=String(ai?.key||"").trim();const model=String(ai?.model||"").trim();
+  if(!(endpoint&&apiKey&&model))return {error:"请先在 API 设置中配置你自己的接口",needApi:true};
+  const w=await env.DB.prepare("SELECT id,name,genre,relationship_type,plot_type,background,world_rules FROM worlds WHERE id=?").bind(wid).first();
+  if(!w)return {error:"世界不存在"};
+  const chars=await env.DB.prepare("SELECT id,name,sex,age,identity,faction,personality FROM characters WHERE world_id=? ORDER BY id LIMIT 9").bind(wid).all();
+  const charInfo=(chars.results||[]).map(c=>({id:c.id,name:c.name,identity:c.identity,faction:c.faction}));
+  const isReasoning=/r1|reason|deepseek.*think/i.test(model);
+  const sys=`你是 CardWorld 任务生成器。根据世界背景生成3个唯一、不重复、与世界强相关的任务。
+输出严格 JSON，格式：{"quests":[{"title":"...","description":"...","quest_type":"main|side","condition_type":"stage|clues|affinity|hostility|dark_pair|event","condition_value":"...","is_adult":0|1}]}
+
+规则：
+- 恰好3个任务：1个 quest_type=main，2个 quest_type=side。
+- 其中1个支线必须 is_adult=1，condition_type="dark_pair"，condition_value 填某个角色id或"any"。成人向任务描述暗示情欲/沉沦/爱恨交织，但不露骨。
+- condition_type 可选：stage(剧情阶段达到N, condition_value=数字), clues(解锁N条线索, value=数字), affinity(对某角色好感≥N, value="角色id:阈值"), hostility(对某角色敌意≥N, value="角色id:阈值"), dark_pair(同一角色好感≥90且敌意≥90, value=角色id或any), event(某事件完成, value=事件标题)。
+- 主线任务 condition_type 用 stage，condition_value 建议 5-8。
+- 标题和描述必须与该世界的 genre、relationship_type、plot_type、角色身份强相关，不能通用模板。
+- 三个任务的完成条件不能重复。
+- 禁止输出卡密、管理后台相关内容。${isReasoning?"\n简短思考后直接输出JSON。":""}`;
+  const userPrompt=`世界信息：
+名称：${w.name}
+类型：${w.genre}
+关系模式：${w.relationship_type}
+剧情方向：${w.plot_type}
+背景：${String(w.background||"").slice(0,500)}
+世界规则：${String(w.world_rules||"").slice(0,300)}
+角色列表：${JSON.stringify(charInfo)}
+
+请生成3个与这个世界强相关的任务。`;
+  const r=await postChatAI(endpoint,apiKey,model,[{role:"system",content:sys},{role:"user",content:userPrompt}],0.7,25000,800,isReasoning?{thinking:{type:"enabled",budget_tokens:150}}:{});
+  if(r.error)return r;
+  const quests=r.data?.quests||[];
+  if(!Array.isArray(quests)||quests.length===0)return {error:"AI 未返回有效任务",raw:r.raw};
+  return {quests:quests.slice(0,3)};
+}
+
 async function getWorldContext(env,wid,localMessages=[]){
   const [w,c,r,e,wb]=await Promise.all([
     env.DB.prepare("SELECT * FROM worlds WHERE id=?").bind(wid).first(),
@@ -607,17 +640,43 @@ async function applyWorldEngineResult(env,wid,w,structured){
 }
 
 async function checkQuests(env,wid,h){
-  const quests=await env.DB.prepare("SELECT id,title,quest_type,sort_order,status FROM quests WHERE world_id=? AND status='active'").bind(wid).all();
+  const quests=await env.DB.prepare("SELECT id,title,quest_type,sort_order,status,condition_type,condition_value FROM quests WHERE world_id=? AND status='active'").bind(wid).all();
+  if(!quests.results?.length) return {completed:[]};
   const unlockedCount=(h.unlocked||[]).length;
-  const maxAffinity=await env.DB.prepare("SELECT MAX(affinity) n FROM characters WHERE world_id=? AND encountered=1").bind(wid).first();
-  const darkPair=await env.DB.prepare("SELECT COUNT(*) n FROM characters WHERE world_id=? AND encountered=1 AND affinity>=90 AND hostility>=90").bind(wid).first();
   const stage=Number(h.stage||0);
+  const chars=await env.DB.prepare("SELECT id,name,affinity,hostility,encountered FROM characters WHERE world_id=?").bind(wid).all();
+  const charList=chars.results||[];
   const completed=[];
   for(const q of quests.results||[]){
     let done=false;
-    if(q.quest_type==="main"&&stage>=5) done=true;
-    if(q.quest_type==="side"&&q.sort_order===1&&Number(darkPair?.n||0)>=1) done=true;
-    if(q.quest_type==="side"&&q.sort_order===2&&unlockedCount>=3) done=true;
+    const ct=q.condition_type||"stage";
+    const cv=q.condition_value||"5";
+    if(ct==="stage"){ done=stage>=Number(cv); }
+    else if(ct==="clues"){ done=unlockedCount>=Number(cv); }
+    else if(ct==="affinity"){
+      const [cid,thr]=cv.split(":").map(Number);
+      const c=charList.find(x=>Number(x.id)===cid);
+      done=!!c&&Number(c.encountered)===1&&Number(c.affinity)>=thr;
+    }
+    else if(ct==="hostility"){
+      const [cid,thr]=cv.split(":").map(Number);
+      const c=charList.find(x=>Number(x.id)===cid);
+      done=!!c&&Number(c.encountered)===1&&Number(c.hostility)>=thr;
+    }
+    else if(ct==="dark_pair"){
+      // 成人向：同一角色好感≥90且敌意≥90
+      if(cv==="any"||!cv){
+        done=charList.some(c=>Number(c.encountered)===1&&Number(c.affinity)>=90&&Number(c.hostility)>=90);
+      } else {
+        const cid=Number(cv);
+        const c=charList.find(x=>Number(x.id)===cid);
+        done=!!c&&Number(c.encountered)===1&&Number(c.affinity)>=90&&Number(c.hostility)>=90;
+      }
+    }
+    else if(ct==="event"){
+      const ev=await env.DB.prepare("SELECT status FROM events WHERE world_id=? AND title=?").bind(wid,String(cv)).first();
+      done=ev?.status==="completed";
+    }
     if(done){
       await env.DB.prepare("UPDATE quests SET status='completed',completed_at=? WHERE id=?").bind(now(),q.id).run();
       completed.push(q);
@@ -670,7 +729,7 @@ export default {
         const b=await req.json();const currentCode=String(b.currentCode||"").trim(),renewalCode=String(b.renewalCode||"").trim();const current=await env.DB.prepare("SELECT * FROM cards WHERE code=? LIMIT 1").bind(currentCode).first();const renewal=await env.DB.prepare("SELECT * FROM cards WHERE code=? LIMIT 1").bind(renewalCode).first();if(!current||!renewal)return json({error:"卡密不存在"},404);if(renewal.status!=="unused")return json({error:"续期卡已使用或不可用"},400);if(current.duration_seconds!==renewal.duration_seconds)return json({error:"续期卡类型必须与原卡完全相同"},400);if(!current.world_id)return json({error:"原卡尚未建立世界，请先激活原卡"},400);const t=now();if(current.expires_at&&Number(current.expires_at)+GRACE<=t){await destroyWorld(env,current.id);return json({error:"原卡已超过5天保留期，世界已销毁"},410)}const expires=Math.max(t,Number(current.expires_at||t))+Number(renewal.duration_seconds);await env.DB.batch([env.DB.prepare("UPDATE cards SET expires_at=?,grace_until=NULL,status='active',renewed_at=? WHERE id=?").bind(expires,t,current.id),env.DB.prepare("UPDATE cards SET status='used',activated_at=?,renewed_at=?,world_id=? WHERE id=?").bind(t,t,current.world_id,renewal.id,current.id)]);const session=await issuePlayerSession(env,{...current,expires_at:expires},current.world_id);return json({ok:true,worldId:current.world_id,sessionToken:session,expiresAt:expires});
       }
       if(p==="/api/world"&&m==="GET"){
-        const wid=Number(u.searchParams.get("id"));const a=await worldAccess(env,req,wid);if(!a.ok)return json({error:a.error},a.status);const w=a.world;const [chars,events,quests]=await Promise.all([env.DB.prepare("SELECT id,name,sex,age,identity,faction,personality,affinity,hostility,encountered,contact,voice_id FROM characters WHERE world_id=? ORDER BY id").bind(wid).all(),env.DB.prepare("SELECT id,title,description,stage,status FROM events WHERE world_id=? ORDER BY id").bind(wid).all(),env.DB.prepare("SELECT id,title,description,quest_type,status,sort_order,reward_card FROM quests WHERE world_id=? ORDER BY sort_order").bind(wid).all()]);return json({world:w,characters:chars.results||[],messages:[],events:events.results||[],quests:quests.results||[],labels:labels(w.genre)});
+        const wid=Number(u.searchParams.get("id"));const a=await worldAccess(env,req,wid);if(!a.ok)return json({error:a.error},a.status);const w=a.world;const [chars,events,quests]=await Promise.all([env.DB.prepare("SELECT id,name,sex,age,identity,faction,personality,affinity,hostility,encountered,contact,voice_id FROM characters WHERE world_id=? ORDER BY id").bind(wid).all(),env.DB.prepare("SELECT id,title,description,stage,status FROM events WHERE world_id=? ORDER BY id").bind(wid).all(),env.DB.prepare("SELECT id,title,description,quest_type,status,sort_order,reward_card,condition_type,condition_value,is_adult FROM quests WHERE world_id=? ORDER BY sort_order").bind(wid).all()]);return json({world:w,characters:chars.results||[],messages:[],events:events.results||[],quests:quests.results||[],labels:labels(w.genre)});
       }
       if(p==="/api/ai/test"&&m==="POST"){const b=await req.json();if(!(b.ai?.endpoint&&b.ai?.key&&b.ai?.model))return json({ok:false,error:"请填写完整 API 地址、Key 和模型"},400);const result=await callPlayerAI(env,{genre:"test",id:0},"连接测试。请返回 JSON：{\"narrative\":\"连接成功\"}",b.ai,{});if(result?.structured||result?.text)return json({ok:true,reply:result.text||result.structured.narrative});return json({ok:false,error:result?.error||"连接失败"},400)}
       if(p==="/api/story/message"&&m==="POST"){
@@ -689,6 +748,9 @@ export default {
       if(p==="/api/story/prepare"&&m==="POST"){const b=await req.json(),wid=Number(b.worldId),content=contentText(b.content);if(!wid||!content)return json({error:"内容不能为空"},400);const a=await worldAccess(env,req,wid);if(!a.ok)return json({error:a.error},a.status);const w=a.world;const data=await getWorldContext(env,wid,Array.isArray(b.localMessages)?b.localMessages:[]);const isReasoning=/r1|reason/i.test(String(b.model||""));const sysExtra=isReasoning?"\n\n【重要】简短思考（不超过150字）后直接输出 JSON，不要长篇分析。":"";const system=`你是 CardWorld 的世界引擎，不是普通聊天机器人。依据世界状态判断玩家行动后果，像网络小说/短剧一样推进剧情。角色只能知道符合其经历的信息；私聊不能制造现实遭遇；隐藏内容满足条件才显示。输出严格 JSON，不要 Markdown。字段：narrative(string),primaryCharacterId(number|null),events([{title,status}]),encounters([{characterId,affinityDelta,location}]),affinityChanges([{characterId,delta}]),hostilityChanges([{characterId,delta}]),worldUpdates({current_location,current_time,weather,stage,player_state_patch}),unlockClues([string])。禁止输出卡密相关内容。${sysExtra}\n\n当前世界上下文：${JSON.stringify(data).slice(0,isReasoning?12000:36000)}`;const instruction=`玩家行动：${content}。根据当前世界状态继续剧情，只有真实同场接触才放入 encounters。`;return json({system,instruction,maxTokens:isReasoning?1000:600,temperature:isReasoning?0.6:0.85,extraBody:isReasoning?{thinking:{type:"enabled",budget_tokens:150}}:{}})}
       // 流式：前端拿到 AI 完整回复后，提交给 worker 应用世界状态
       if(p==="/api/story/commit"&&m==="POST"){const b=await req.json(),wid=Number(b.worldId),raw=String(b.raw||"");if(!wid||!raw)return json({error:"worldId 或 raw 缺失"},400);const a=await worldAccess(env,req,wid);if(!a.ok)return json({error:a.error},a.status);const w=a.world;const parsed=parseJsonReply(raw);const engine=parsed.data?await applyWorldEngineResult(env,wid,w,parsed.data):{state:safeJsonParse(w.hidden_state,{stage:0}),touchedCharacters:[],questUpdates:{completed:[],permanentCard:null}};const primary=Number(parsed.data?.primaryCharacterId||engine.touchedCharacters?.[0]?.id||0);return json({reply:String(parsed.data?.narrative||raw).slice(0,2000),character:engine.touchedCharacters?.find(c=>c.id===primary)||engine.touchedCharacters?.[0]||null,hiddenState:engine.state,questUpdates:engine.questUpdates||{completed:[],permanentCard:null}})}
+
+      // AI 根据世界动态生成3个任务
+      if(p==="/api/quests/generate"&&m==="POST"){const b=await req.json(),wid=Number(b.worldId);if(!wid)return json({error:"worldId 缺失"},400);const a=await worldAccess(env,req,wid);if(!a.ok)return json({error:a.error},a.status);const existing=await env.DB.prepare("SELECT COUNT(*) n FROM quests WHERE world_id=?").bind(wid).first();if(Number(existing?.n||0)>0)return json({error:"该世界已有任务，如需重新生成请先删除",alreadyExists:true},409);const result=await generateQuestsAI(env,wid,b.ai||null);if(result.error)return json({error:result.error,needApi:result.needApi},400);const t=now();const inserted=[];for(let i=0;i<result.quests.length;i++){const q=result.quests[i];const qt=["main","side"].includes(q.quest_type)?q.quest_type:"side";const ct=["stage","clues","affinity","hostility","dark_pair","event"].includes(q.condition_type)?q.condition_type:"stage";const adult=Number(q.is_adult||0);await env.DB.prepare("INSERT INTO quests(world_id,title,description,quest_type,status,sort_order,created_at,condition_type,condition_value,is_adult) VALUES(?,?,?,?,?,?,?,?,?,?)").bind(wid,String(q.title||"任务").slice(0,100),String(q.description||"").slice(0,500),qt,"active",i,t,ct,String(q.condition_value||"5"),adult).run();inserted.push({title:q.title,quest_type:qt,condition_type:ct,condition_value:q.condition_value,is_adult:adult});}return json({quests:inserted});}
 
       if(p.startsWith("/api/admin/")&&!(await adminOK(env,req)))return json({error:"管理员认证失败"},401);
       if(p==="/api/admin/cards"&&m==="GET"){const q=String(u.searchParams.get("q")||"").trim();const r=q?await env.DB.prepare("SELECT * FROM cards WHERE code LIKE ? ORDER BY id DESC").bind(`%${q}%`).all():await env.DB.prepare("SELECT * FROM cards ORDER BY id DESC").all();return json({cards:r.results||[],types:Object.keys(DUR)})}

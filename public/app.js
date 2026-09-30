@@ -203,7 +203,8 @@ function renderMessages() {
     }
     const streaming = (!isUser && isLast && state.streaming && m.content) ? " streaming" : "";
     if (isUser) {
-      return `<div class="msg-row user"><div class="msg-top"><div class="bubble user">${esc(m.content)}</div></div></div>`;
+      const avatar=state.prefs?.avatar||"🧑";
+      return `<div class="msg-row user"><div class="msg-top"><div class="bubble user">${esc(m.content)}</div><div class="msg-avatar user-avatar">${avatar}</div></div></div>`;
     }
     return `<div class="msg-row ai"><div class="msg-name">${esc(name)}</div><div class="msg-top"><div class="msg-avatar">${esc(initial)}</div><div class="bubble ai${streaming}">${esc(m.content)}${streaming ? '<span class="cursor"></span>' : ''}</div></div></div>`;
   }).join("");
@@ -285,16 +286,20 @@ function extractNarrative(raw){
 
 async function sendStory() {
   const input = $("#storyInput");
-  const content = input.value.trim();
-  if (!content || input.disabled) return;
+  const rawContent = input.value.trim();
+  if (input.disabled) return;
   if (!ownAPIReady()) { alert("开始剧情前，请先在「API 设置」中配置你自己的接口。"); openAPI(); return; }
+  // 空白输入 = 自动推进剧情
+  const content = rawContent || "（你没有说话，静静等待事态发展。请根据当前场景自然推进剧情。）";
   input.disabled = true; input.value = "";
 
-  // 1. 立即显示用户消息
+  // 1. 立即显示用户消息（空白时不显示用户气泡，直接推进）
   const nowMs=Date.now();
-  const userMsg={role:"user",character_id:null,content,created_at:nowMs};
-  state.messages.push(userMsg);
-  await idbAppendStory(state.worldId,[userMsg]);
+  if(rawContent){
+    const userMsg={role:"user",character_id:null,content:rawContent,created_at:nowMs};
+    state.messages.push(userMsg);
+    await idbAppendStory(state.worldId,[userMsg]);
+  }
   // 插入一个空的 AI 气泡，用于流式填充
   const aiMsg={role:"assistant",character_id:null,content:"",created_at:nowMs+1};
   state.messages.push(aiMsg);
@@ -615,8 +620,16 @@ async function showIntro(){
 async function showPersonaForm(){
   const overlay=document.createElement("div");
   overlay.className="intro-overlay center";
+  const presetAvatars=["🧑","👩","🧔","👱","🧑‍🦰","👨‍🦱","👩‍🦳","🧑‍🎤","🦸","🧙","🥷","👸","🤴","🧛","🧝","🐱","🐺","🦊","🐉","👻"];
+  const currentAvatar=state.prefs?.avatar||"🧑";
   overlay.innerHTML=`<div class="persona-card">
-    <div class="sheet-title" style="text-align:center;margin-bottom:16px">塑造你的角色</div>
+    <div class="sheet-title" style="text-align:center;margin-bottom:8px">塑造你的角色</div>
+    <div style="text-align:center;margin-bottom:14px">
+      <div id="avatarPreview" style="width:64px;height:64px;border-radius:50%;background:var(--accent-soft);display:grid;place-items:center;font-size:32px;margin:0 auto 8px">${currentAvatar}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:280px;margin:0 auto">
+        ${presetAvatars.map(e=>`<button class="avatar-pick" data-avatar="${e}" style="width:36px;height:36px;border-radius:50%;border:${e===currentAvatar?'2px solid var(--accent)':'1px solid var(--line)'};background:var(--bg);font-size:18px;cursor:pointer">${e}</button>`).join("")}
+      </div>
+    </div>
     <div class="form-card">
       <div class="field"><label>你的名字</label><input id="pName" placeholder="给自己取个名字"></div>
       <div class="field"><label>外貌特征</label><input id="pLook" placeholder="例如：黑衣、佩剑"></div>
@@ -626,11 +639,22 @@ async function showPersonaForm(){
     <button id="pSubmit" class="save-full">进入世界</button>
   </div>`;
   document.body.appendChild(overlay);
+  let selectedAvatar=currentAvatar;
+  overlay.querySelectorAll(".avatar-pick").forEach(btn=>{
+    btn.onclick=()=>{
+      selectedAvatar=btn.dataset.avatar;
+      $("#avatarPreview").textContent=selectedAvatar;
+      overlay.querySelectorAll(".avatar-pick").forEach(b=>b.style.border="1px solid var(--line)");
+      btn.style.border="2px solid var(--accent)";
+    };
+  });
   $("#pSubmit").onclick=async()=>{
     const name=$("#pName").value.trim()||"无名者";
     const look=$("#pLook").value.trim();
     const persona=$("#pPersona").value.trim();
     const identity=$("#pIdentity").value.trim();
+    state.prefs.avatar=selectedAvatar;
+    save();
     await api(`/api/settings?worldId=${state.worldId}`,{method:"POST",body:JSON.stringify({worldId:state.worldId,data:{custom:{name,look,persona,identity,lore:`外貌：${look}；性格：${persona}；身份：${identity}`}}})});
     // 生成初始场景；剧情只保存在本机 IndexedDB
     let scene="你睁开眼，发现自己来到了这个世界。";
@@ -646,15 +670,50 @@ async function showPersonaForm(){
   };
 }
 
-function openQuests(){
+function conditionLabel(q){
+  const ct=q.condition_type, cv=q.condition_value;
+  if(ct==="stage") return `剧情阶段达到 ${cv}`;
+  if(ct==="clues") return `解锁 ${cv} 条隐藏线索`;
+  if(ct==="affinity"){const [id,thr]=(cv||"").split(":");return `对角色 #${id} 好感≥${thr}`;}
+  if(ct==="hostility"){const [id,thr]=(cv||"").split(":");return `对角色 #${id} 敌意≥${thr}`;}
+  if(ct==="dark_pair") return cv==="any"?"任一角色好感≥90且敌意≥90":`角色 #${cv} 好感≥90且敌意≥90`;
+  if(ct==="event") return `完成事件：${cv}`;
+  return cv||"";
+}
+async function openQuests(){
   const qs=state.quests||[];
+  if(qs.length===0){
+    // 没有任务，显示生成界面
+    openSheet(`<div class="sheet-head"><div class="sheet-title">任务</div><button class="close" data-close>×</button></div>
+      <div class="form-card" style="margin-top:14px;text-align:center">
+        <div style="font-size:36px;margin-bottom:10px">📜</div>
+        <div class="contact-name">本世界暂无任务</div>
+        <div class="small" style="margin:10px 0">AI 将根据当前世界生成 3 个专属任务（1主线+2支线，含成人向），全部完成可获得永久卡密。</div>
+        <button id="genQuestBtn" class="save-full">AI 生成任务</button>
+      </div>`);
+    const btn=$("#genQuestBtn");
+    if(btn) btn.onclick=async ()=>{
+      if(!ownAPIReady()){alert("生成任务前，请先在「API 设置」中配置你自己的接口。");openAPI();return;}
+      btn.disabled=true;btn.textContent="生成中...";
+      try{
+        const r=await api("/api/quests/generate",{method:"POST",body:JSON.stringify({worldId:state.worldId,ai:state.ai})});
+        if(r.error){alert(r.error);btn.disabled=false;btn.textContent="AI 生成任务";return;}
+        // 刷新世界数据获取新任务
+        await loadWorld(state.worldId);
+        if(state.sheet)state.sheet.remove();
+        openQuests();
+      }catch(e){alert("生成失败："+e.message);btn.disabled=false;btn.textContent="AI 生成任务";}
+    };
+    return;
+  }
   const done=qs.filter(q=>q.status==="completed").length;
   const body=qs.map(q=>`
     <div class="list-card" style="margin-top:10px;opacity:${q.status==='completed'?0.5:1}">
       <div class="list-row">
-        <div>
-          <div class="contact-name">${q.quest_type==='main'?'⭐':'📌'} ${esc(q.title)}</div>
+        <div style="flex:1">
+          <div class="contact-name">${q.quest_type==='main'?'⭐':'📌'} ${esc(q.title)} ${Number(q.is_adult)===1?'<span style="color:#e91e63;font-size:12px">🔞成人向</span>':''}</div>
           <div class="small">${esc(q.description)}</div>
+          <div class="small" style="color:var(--accent);margin-top:4px">条件：${esc(conditionLabel(q))}</div>
         </div>
         <div class="pill">${q.status==='completed'?'✅':'进行中'}</div>
       </div>
