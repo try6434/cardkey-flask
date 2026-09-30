@@ -53,6 +53,7 @@ async function idbGet(wid){const db=await idbOpen();return new Promise((resolve,
 async function idbPut(obj){const db=await idbOpen();return new Promise((resolve,reject)=>{const tx=db.transaction("worlds","readwrite");tx.objectStore("worlds").put(obj);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error)})}
 async function idbDelete(wid){const db=await idbOpen();return new Promise((resolve,reject)=>{const tx=db.transaction("worlds","readwrite");tx.objectStore("worlds").delete(wid);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error)})}
 async function idbAppendStory(wid,msgs){const cur=await idbGet(wid);cur.messages=(cur.messages||[]).concat(msgs).slice(-800);await idbPut(cur)}
+async function idbSaveMessages(wid,msgs){const cur=await idbGet(wid);cur.messages=(msgs||[]).slice(-800);await idbPut(cur)}
 async function idbLoadStory(wid){return (await idbGet(wid)).messages||[]}
 async function idbAppendContact(wid,cid,msgs){const cur=await idbGet(wid);cur.contacts=cur.contacts||{};cur.contacts[cid]=(cur.contacts[cid]||[]).concat(msgs).slice(-300);await idbPut(cur)}
 async function idbLoadContact(wid,cid){return (await idbGet(wid)).contacts?.[cid]||[]}
@@ -164,7 +165,6 @@ function renderWorld() {
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button id="questBtn" class="quest-btn" title="任务">📜</button>
-          <div class="pill">${esc(genreCN(w.genre))}</div>
         </div>
       </div>
       <main id="story" class="story">
@@ -207,18 +207,18 @@ function renderMessages() {
     const name = characterName(m.character_id);
     const cid=String(m.character_id||"world");
     const customAvatar=charAvatar(cid);
-    const initial = isUser ? "" : (name[0] || "世");
-    // 正在输入（最后一条 AI 消息且内容为空）
+    // 正在输入
     if (!isUser && isLast && state.streaming && !m.content) {
-      return `<div class="msg-row ai"><div class="msg-name">${esc(name)}</div><div class="typing"><span></span><span></span><span></span></div></div>`;
+      return `<div class="msg-row ai"><div class="msg-top"><div class="msg-avatar-col"><div class="msg-avatar-name">${esc(name)}</div><div class="msg-avatar">${esc(name[0]||"世")}</div></div><div class="typing"><span></span><span></span><span></span></div></div></div>`;
     }
     const streaming = (!isUser && isLast && state.streaming && m.content) ? " streaming" : "";
     if (isUser) {
       const avatar=state.prefs?.avatar||"🧑";
-      return `<div class="msg-row user"><div class="msg-top"><div class="bubble user">${esc(m.content)}</div><div class="msg-avatar user-avatar" style="overflow:hidden">${avatarHTML(avatar)}</div></div></div>`;
+      return `<div class="msg-row user"><div class="msg-top"><div class="msg-avatar-col"><div class="msg-avatar user-avatar" style="overflow:hidden">${avatarHTML(avatar)}</div></div><div class="bubble user">${esc(m.content)}</div></div></div>`;
     }
-    const avatarContent=customAvatar?avatarHTML(customAvatar):esc(initial);
-    return `<div class="msg-row ai"><div class="msg-name">${esc(name)}</div><div class="msg-top"><div class="msg-avatar char-avatar-click" data-cid="${cid}" data-cname="${esc(name)}" style="overflow:hidden;cursor:pointer">${avatarContent}</div><div class="bubble ai${streaming}">${esc(m.content)}${streaming ? '<span class="cursor"></span>' : ''}</div></div></div>`;
+    const avatarContent=customAvatar?avatarHTML(customAvatar):esc(name[0]||"世");
+    const canRefresh=!streaming&&!state.streaming;
+    return `<div class="msg-row ai"><div class="msg-top"><div class="msg-avatar-col"><div class="msg-avatar-name">${esc(name)}</div><div class="msg-avatar char-avatar-click" data-cid="${cid}" data-cname="${esc(name)}" style="overflow:hidden">${avatarContent}</div></div><div class="bubble ai${streaming}">${esc(m.content)}${streaming ? '<span class="cursor"></span>' : ''}${canRefresh?`<button class="bubble-refresh" data-regen="${i}" title="重新生成">↻</button>`:''}</div></div></div>`;
   }).join("");
 }
 function characterName(id) {
@@ -289,6 +289,10 @@ function bindWorldUI() {
   // NPC 头像点击更换
   document.querySelectorAll(".char-avatar-click").forEach(el=>{
     el.onclick=()=>openCharAvatarEditor(el.dataset.cid,el.dataset.cname);
+  });
+  // AI 回答刷新按钮
+  document.querySelectorAll(".bubble-refresh").forEach(btn=>{
+    btn.onclick=(e)=>{e.stopPropagation();regenerateMessage(Number(btn.dataset.regen));};
   });
 
   $("#emojiBtn").onclick = () => {
@@ -361,8 +365,9 @@ async function sendStory() {
 
   try {
     const localMessages=(state.messages||[]).filter(m=>m.content).map(m=>({role:m.role,content:String(m.content).slice(0,800)})).slice(-40);
+    const memory=await idbGetMemory(state.worldId);
     // 2. 向 worker 要系统提示
-    const prep=await api("/api/story/prepare",{method:"POST",body:JSON.stringify({worldId:state.worldId,content,localMessages,model:state.ai.model})});
+    const prep=await api("/api/story/prepare",{method:"POST",body:JSON.stringify({worldId:state.worldId,content,localMessages,model:state.ai.model,memory})});
     // 3. 浏览器直连硅基流动，流式
     let endpoint=state.ai.endpoint.replace(/\/+$/,"");
     if(!/\/chat\/completions$/.test(endpoint)){endpoint+=(/\/v\d+$/.test(endpoint)?"/chat/completions":"/v1/chat/completions");}
@@ -390,6 +395,8 @@ async function sendStory() {
     if(commit.questUpdates?.permanentCard){showPermanentCard(commit.questUpdates.permanentCard);}
     else if(commit.questUpdates?.completed?.length){alert(`任务完成：${commit.questUpdates.completed.map(q=>q.title).join("、")}`);}
     if(state.voice.autoRead) speak(narrative,commit.character?.id);
+    await updateMemoryIfNeeded();
+    await checkNewContactInvitations();
   } catch(err){
     aiMsg.content="⚠️ "+err.message;
     state.streaming=false;
@@ -670,18 +677,28 @@ async function showIntro(){
   });
 }
 
-const RANDOM_IDENTITIES=[
-  "落魄剑客，被师门逐出师门","富家千金，家族企业濒临破产","药店学徒，偶然得到一本古方","镖局趟子手，第一次走镖就遇伏",
-  "酒馆店小二，听多了江湖秘辛","戏班花旦，真实身份是细作","采药女，在深山捡到失忆男子","铁匠之子，打造出一把会说话的剑",
-  "书生，进京赶考途中盘缠被偷","捕快，接手一桩无人敢查的命案","宫女，无意间撞破后宫秘密","商贩，倒卖一件不该卖的东西",
-  "佣兵，接了一单有去无回的委托","祭司学徒，第一次祈福就引来异象","海盗水手，船沉后唯一幸存者","学院新生，入学测试测出罕见属性",
-  "管家之子，替少爷顶罪被流放","歌姬，一曲惊动微服私访的大人物","医者，治好了不该治的人","刺客，目标竟是自己失散多年的亲人",
-  "邮差，投递一封不该被拆开的信","厨师，做的菜让食客说出了秘密","守墓人，发现一座空了的新坟","更夫，打更时看到不该看的东西",
-  "绣娘，绣品里藏着谋反密信","车夫，拉的乘客身上带着血","渔夫，网到一条会说话的鱼","樵夫，砍柴时捡到一枚滴血的玉佩",
-  "赌徒，输光后被人塞了一张纸条","乞丐，乞讨时有人叫出了他的真名","花匠，种出一朵黑色的花","钟表匠，修好了一块倒着走的表",
-  "图书馆管理员，发现一本没有作者的书","快递员，包裹里渗出了液体","加油站新员工，凌晨三点油泵自己启动","便利店夜班店员，总有客人凌晨三点准时出现",
-  "公司实习生，发现了领导的秘密","护士，病房里的病人从不睡觉","消防员，火场里听到有人叫自己名字","记者，调查一篇不能发的报道"
-];
+async function aiRandomizePersona(world,missing){
+  if(!ownAPIReady())return null;
+  const endpoint=state.ai.endpoint.replace(/\/+$/,"");
+  const ep=endpoint+(/\/v\d+$/.test(endpoint)?"/chat/completions":"/v1/chat/completions");
+  const sys=`你是角色设定生成器。根据世界背景，为玩家生成符合这个世界的角色设定。只输出JSON，不解释。格式：{"name":"...","look":"...","persona":"...","identity":"..."}。身份必须符合世界类型，仙侠世界不能出现消防员、程序员等现代职业。`;
+  const user=`世界名称：${world.name||""}
+类型：${world.genre||""}
+关系模式：${world.relationship_type||""}
+剧情方向：${world.plot_type||""}
+世界背景：${String(world.background||"").slice(0,600)}
+需要生成的字段：${missing.join("、")}
+请为这些字段生成符合该世界的设定。`;
+  try{
+    const r=await fetch(ep,{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${state.ai.key}`},body:JSON.stringify({model:state.ai.model,messages:[{role:"system",content:sys},{role:"user",content:user}],temperature:0.9,max_tokens:300})});
+    if(!r.ok)return null;
+    const d=await r.json();
+    const text=d.choices?.[0]?.message?.content||"";
+    const m=text.match(/\{[\s\S]*\}/);
+    if(!m)return null;
+    return JSON.parse(m[0]);
+  }catch(e){return null;}
+}
 
 async function showPersonaForm(){
   const overlay=document.createElement("div");
@@ -700,10 +717,10 @@ async function showPersonaForm(){
       </div>
     </div>
     <div class="form-card">
-      <div class="field"><label>你的名字</label><input id="pName" placeholder="给自己取个名字"></div>
-      <div class="field"><label>外貌特征</label><input id="pLook" placeholder="例如：黑衣、佩剑"></div>
-      <div class="field"><label>性格</label><input id="pPersona" placeholder="例如：冷静、话少、重情义"></div>
-      <div class="field"><label>身份/背景 <span id="randomIdentityBtn" style="font-size:11px;color:var(--accent);cursor:pointer">🎲 随机一个</span></label><input id="pIdentity" placeholder="留空则随机分配身份"></div>
+      <div class="field"><label>你的名字</label><input id="pName" placeholder="留空自动生成"></div>
+      <div class="field"><label>外貌特征</label><input id="pLook" placeholder="留空自动生成"></div>
+      <div class="field"><label>性格</label><input id="pPersona" placeholder="留空自动生成"></div>
+      <div class="field"><label>身份/背景</label><input id="pIdentity" placeholder="留空自动生成，符合当前世界"></div>
     </div>
     <button id="pSubmit" class="save-full">进入世界</button>
   </div>`;
@@ -730,16 +747,33 @@ async function showPersonaForm(){
       overlay.querySelectorAll(".avatar-pick").forEach(b=>b.style.border="1px solid var(--line)");};
     reader.readAsDataURL(file);
   };
-  $("#randomIdentityBtn").onclick=()=>{
-    const rid=RANDOM_IDENTITIES[Math.floor(Math.random()*RANDOM_IDENTITIES.length)];
-    $("#pIdentity").value=rid;
-  };
   $("#pSubmit").onclick=async()=>{
-    const name=$("#pName").value.trim()||"无名者";
-    const look=$("#pLook").value.trim();
-    const persona=$("#pPersona").value.trim();
+    const btn=$("#pSubmit");
+    let name=$("#pName").value.trim();
+    let look=$("#pLook").value.trim();
+    let persona=$("#pPersona").value.trim();
     let identity=$("#pIdentity").value.trim();
-    if(!identity){identity=RANDOM_IDENTITIES[Math.floor(Math.random()*RANDOM_IDENTITIES.length)];}
+    const missing=[];
+    if(!name)missing.push("name");
+    if(!look)missing.push("look");
+    if(!persona)missing.push("persona");
+    if(!identity)missing.push("identity");
+    if(missing.length>0){
+      btn.disabled=true;btn.textContent="AI 生成身份中...";
+      const aiResult=await aiRandomizePersona(state.world||{},missing);
+      if(aiResult){
+        if(!name&&aiResult.name)name=String(aiResult.name).slice(0,20);
+        if(!look&&aiResult.look)look=String(aiResult.look).slice(0,50);
+        if(!persona&&aiResult.persona)persona=String(aiResult.persona).slice(0,50);
+        if(!identity&&aiResult.identity)identity=String(aiResult.identity).slice(0,80);
+      }
+      // AI 失败时给保底
+      if(!name)name="无名者";
+      if(!look)look="衣着普通，面容清秀";
+      if(!persona)persona="冷静、话少、重情义";
+      if(!identity)identity="初来乍到的旅人";
+      btn.textContent="进入世界";btn.disabled=false;
+    }
     state.prefs.avatar=selectedAvatar;
     save();
     await api(`/api/settings?worldId=${state.worldId}`,{method:"POST",body:JSON.stringify({worldId:state.worldId,data:{custom:{name,look,persona,identity,lore:`外貌：${look}；性格：${persona}；身份：${identity}`}}})});
@@ -791,6 +825,126 @@ function openCharAvatarEditor(cid,cname){
     else state.prefs.charAvatars[cid]=selected;
     save();overlay.remove();renderWorld();
   };
+}
+
+// 记忆库：存储剧情摘要，防止AI失忆
+async function idbGetMemory(worldId){
+  try{
+    const db=await idbOpen();const tx=db.transaction("worlds","readonly");const store=tx.objectStore("worlds");
+    const w=await store.get(worldId);return w?.memory||"";
+  }catch(e){return "";}
+}
+async function idbSetMemory(worldId,memory){
+  try{
+    const db=await idbOpen();const tx=db.transaction("worlds","readwrite");const store=tx.objectStore("worlds");
+    const w=await store.get(worldId)||{worldId};w.memory=memory;await store.put(w);
+  }catch(e){}
+}
+// 每10轮对话后用AI概括剧情更新记忆库
+async function updateMemoryIfNeeded(){
+  const msgs=state.messages||[];
+  if(msgs.length<10||msgs.length%10!==0)return;
+  if(!ownAPIReady())return;
+  const oldMem=await idbGetMemory(state.worldId);
+  const recent=msgs.slice(-10).map(m=>`${m.role==="user"?"玩家":characterName(m.character_id)}：${String(m.content).slice(0,150)}`).join("\n");
+  const endpoint=state.ai.endpoint.replace(/\/+$/,"");
+  const ep=endpoint+(/\/v\d+$/.test(endpoint)?"/chat/completions":"/v1/chat/completions");
+  try{
+    const r=await fetch(ep,{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${state.ai.key}`},body:JSON.stringify({model:state.ai.model,messages:[{role:"system",content:"你是剧情记忆管理员。根据已有记忆和最近对话，更新剧情摘要。保留关键人物、地点、事件、关系变化、伏笔。不超过300字。只输出摘要文本，不要解释。"},{role:"user",content:`已有记忆：${oldMem||"无"}\n\n最近对话：\n${recent}`}],temperature:0.3,max_tokens:400})});
+    if(!r.ok)return;
+    const d=await r.json();
+    const summary=d.choices?.[0]?.message?.content?.trim();
+    if(summary)await idbSetMemory(state.worldId,summary);
+  }catch(e){}
+}
+
+// 重新生成某条AI消息
+async function regenerateMessage(index){
+  if(state.streaming)return;
+  if(!ownAPIReady()){alert("请先配置 API 设置");openAPI();return;}
+  const msgs=state.messages;
+  // 找到这条AI消息对应的用户输入（前一条user消息）
+  let userInput="继续";
+  for(let i=index-1;i>=0;i--){if(msgs[i].role==="user"){userInput=msgs[i].content;break;}}
+  // 删除这条AI消息
+  const removed=msgs.splice(index,1)[0];
+  await idbSaveMessages(state.worldId,msgs);
+  state.streaming=true;
+  renderWorld();scrollBottom();
+  // 重新走一遍流式生成
+  const aiMsg={role:"assistant",character_id:removed.character_id||null,content:"",created_at:Date.now()};
+  msgs.splice(index,0,aiMsg);
+  try{
+    const localMessages=msgs.filter(m=>m.content).map(m=>({role:m.role,content:String(m.content).slice(0,800)})).slice(-40);
+    const prep=await api("/api/story/prepare",{method:"POST",body:JSON.stringify({worldId:state.worldId,content:userInput,localMessages,model:state.ai.model,memory:await idbGetMemory(state.worldId)})});
+    let endpoint=state.ai.endpoint.replace(/\/+$/,"");
+    if(!/\/chat\/completions$/.test(endpoint)){endpoint+=(/\/v\d+$/.test(endpoint)?"/chat/completions":"/v1/chat/completions");}
+    const resp=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${state.ai.key}`},body:JSON.stringify({model:state.ai.model,messages:[{role:"system",content:prep.system},{role:"user",content:prep.instruction}],temperature:prep.temperature,max_tokens:prep.maxTokens,stream:true,...(prep.extraBody||{})})});
+    if(!resp.ok){const t=await resp.text();throw new Error(`AI API ${resp.status}: ${t.slice(0,200)}`)}
+    const reader=resp.body.getReader();const decoder=new TextDecoder();let fullContent="";let lastDisplayed="";let sseBuf="";
+    while(true){const {done,value}=await reader.read();if(done)break;sseBuf+=decoder.decode(value,{stream:true});
+      const lines=sseBuf.split("\n");sseBuf=lines.pop()||"";
+      for(const line of lines){if(!line.startsWith("data: "))continue;const payload=line.slice(6).trim();if(payload==="[DONE]")continue;try{const j=JSON.parse(payload);fullContent+=j.choices?.[0]?.delta?.content||"";}catch{}}
+      const display=extractNarrative(fullContent);
+      if(display&&display!==lastDisplayed){lastDisplayed=display;aiMsg.content=display;renderWorld();scrollBottom();}
+    }
+    const parsed=parseJsonLocal(fullContent);
+    const narrative=parsed?.narrative||fullContent.slice(0,1500);
+    aiMsg.content=narrative;
+    msgs[index]=aiMsg;
+    await idbSaveMessages(state.worldId,msgs);
+    const commit=await api("/api/story/commit",{method:"POST",body:JSON.stringify({worldId:state.worldId,raw:fullContent})});
+    aiMsg.character_id=commit.character?.id||null;
+    await idbSaveMessages(state.worldId,msgs);
+    await refreshWorldState();
+    state.streaming=false;
+    renderWorld();scrollBottom();
+    await updateMemoryIfNeeded();
+  }catch(err){
+    aiMsg.content="⚠️ "+err.message;
+    state.streaming=false;
+    renderWorld();scrollBottom();
+  }
+}
+
+// 通讯器邀请：新角色加入通讯录时需要玩家同意
+async function checkNewContactInvitations(){
+  try{
+    const data=await api(`/api/contacts?worldId=${state.worldId}`);
+    const currentContacts=data.contacts||[];
+    const knownKey=`cw_known_contacts_${state.worldId}`;
+    const knownIds=JSON.parse(localStorage.getItem(knownKey)||"[]");
+    const newOnes=currentContacts.filter(c=>!knownIds.includes(c.id));
+    // 更新已知列表
+    localStorage.setItem(knownKey,JSON.stringify(currentContacts.map(c=>c.id)));
+    // 对新联系人逐个显示邀请
+    for(const c of newOnes){
+      await showContactInvitation(c);
+    }
+  }catch(e){}
+}
+function showContactInvitation(character){
+  return new Promise(resolve=>{
+    const overlay=document.createElement("div");
+    overlay.className="intro-overlay center";
+    overlay.style.background="rgba(0,0,0,0.5)";
+    overlay.innerHTML=`<div class="persona-card" style="max-width:320px;text-align:center">
+      <div style="font-size:40px;margin-bottom:8px">📱</div>
+      <div class="sheet-title" style="margin-bottom:8px">通讯器邀请</div>
+      <div class="small" style="margin-bottom:6px">「${esc(character.name)}」想添加你的联系方式</div>
+      <div class="small" style="color:var(--muted);margin-bottom:16px">${esc(character.identity||"")} · 好感 ${character.affinity}</div>
+      <div style="display:flex;gap:8px">
+        <button id="ciDecline" class="save-full" style="flex:1;background:var(--line);color:var(--text)">拒绝</button>
+        <button id="ciAccept" class="save-full" style="flex:1">同意</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    $("#ciAccept").onclick=async()=>{overlay.remove();resolve();};
+    $("#ciDecline").onclick=async()=>{
+      await api("/api/contacts/respond",{method:"POST",body:JSON.stringify({worldId:state.worldId,characterId:character.id,accepted:false})});
+      overlay.remove();resolve();
+    };
+  });
 }
 
 function conditionLabel(q){
