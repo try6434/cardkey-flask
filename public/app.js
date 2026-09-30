@@ -56,10 +56,15 @@ async function loadWorld() {
   state.quests = data.quests || [];
   state.labels = data.labels || state.labels;
   save();
-  renderWorld();
-  scrollBottom();
   const introKey = `cw_intro_${state.worldId}`;
-  if (!localStorage.getItem(introKey)) setTimeout(showIntro, 300);
+  const needIntro = !localStorage.getItem(introKey);
+  if (needIntro) {
+    $("#app").innerHTML = "";
+    showIntro();
+  } else {
+    renderWorld();
+    scrollBottom();
+  }
 }
 
 function applyTheme(){document.documentElement.dataset.theme=state.prefs.theme||"system";}
@@ -156,10 +161,6 @@ function renderWorld() {
       </div>
       <main id="story" class="story">
         <div class="scene">
-          <div class="scene-head">
-            <div class="scene-line"><span>${esc(w.relationship_type || "")}</span><span>${esc(w.plot_type || "")}</span></div>
-            <div class="narration">${esc(w.background || "")}</div>
-          </div>
           ${renderMessages()}
         </div>
       </main>
@@ -177,6 +178,8 @@ function renderWorld() {
       </div>
     </div>`;
   bindWorldUI();
+  const bpEl=$("#bpName");
+  if(bpEl)bpEl.textContent=bpName(state.world?.genre||"");
 }
 
 function renderMessages() {
@@ -198,7 +201,7 @@ function plusPanel() {
   return `<div class="plus-panel"><div class="plus-grid">
     <button class="plus-item" data-fn="contacts"><span class="ico">👥</span><span class="name">${esc(state.labels[0])}</span><div class="hint">与你真实遭遇过的人物</div></button>
     <button class="plus-item" data-fn="worldbook"><span class="ico">📖</span><span class="name">世界书</span><div class="hint">世界规则与已知信息</div></button>
-    <button class="plus-item" data-fn="worldview"><span class="ico">🌍</span><span class="name">世界观</span><div class="hint">世界类型偏好，不改剧情</div></button>
+    <button class="plus-item" data-fn="backpack"><span class="ico">🎒</span><span class="name" id="bpName">背包</span><div class="hint">货币与物品</div></button>
     <button class="plus-item" data-fn="api"><span class="ico">🔑</span><span class="name">API 设置</span><div class="hint">你的 AI 接口</div></button>
     <button class="plus-item" data-fn="persona"><span class="ico">🧑</span><span class="name">我的人设</span><div class="hint">只改你自己，不动 NPC</div></button>
     <button class="plus-item" data-fn="voice"><span class="ico">♫</span><span class="name">语音</span><div class="hint">自定义 TTS 音色</div></button>
@@ -243,7 +246,7 @@ function bindWorldUI() {
     renderWorld();
     if (fn === "contacts") openContacts();
     if (fn === "worldbook") openWorldbook();
-    if (fn === "worldview") openWorldview();
+    if (fn === "backpack") openBackpack();
     if (fn === "api") openAPI();
     if (fn === "persona") openPersona();
     if (fn === "voice") openVoice();
@@ -311,31 +314,56 @@ async function sendContact() {
 }
 function emptyState(title, detail) { return `<div class="list-card"><div class="contact-name">${esc(title)}</div><div class="small" style="margin-top:6px">${esc(detail)}</div></div>`; }
 
+const GENRE_CN={xianxia:"仙侠",wuxia:"武侠",ancient:"古代",alternate_history:"架空历史",primordial:"洪荒",palace:"宫廷",urban:"都市",campus:"校园",workplace:"职场",entertainment:"娱乐圈",esports:"电竞",fantasy:"西方奇幻",medieval:"中世纪",vampire:"血族",norse:"北欧神话","sci-fi":"近未来",interstellar:"星际",cyberpunk:"赛博朋克",apocalypse:"末日",cthulhu:"克苏鲁",infinite:"无限流",quick_transmigration:"快穿",rebirth:"重生",supernatural:"灵异",mystery:"悬疑",historical:"真实历史",time_travel:"穿越",villain:"反派视角",system:"系统流",infinite_dungeon:"无限副本",vampire_noble:"血族贵族",witch:"女巫猎人",beastman:"兽人",merfolk:"海底人鱼",ghost:"阴阳眼",cultivation_failure:"废柴修仙",demon_court:"地府鬼差",heaven:"天庭神仙",martial_soul:"武魂觉醒",mecha:"机甲战争",magical_girl:"魔法少女",urban_immortal:"都市修真",detective:"推理探案",game_world:"游戏世界",ice_apocalypse:"极寒末日",dystopia:"反乌托邦",space_opera:"太空歌剧",deep_sea:"深海恐惧",time_loop:"时间循环",parallel_world:"平行世界",myth_china:"中国神话",myth_greek:"希腊神话",myth_norse:"北欧神话",business:"商战",sports:"竞技体育",post_apocalypse_z:"丧尸末日",sea_apocalypse:"全球淹没",entertainment_rebirth:"重生娱乐圈"};
+const REL_CN={BG:"男女",BL:"男男",GL:"女女",beastman:"兽人",poly:"多角",inhuman:"人外",none:"无特定",childhood_sweetheart:"青梅竹马",enemies_to_lovers:"死敌变爱人",contract:"契约关系",arranged:"政治联姻",boss_subordinate:"上下级",teacher_student:"师徒禁忌",soulmate:"灵魂伴侣",one_sided:"单向暗恋",love_triangle:"三角关系",forbidden:"禁忌之恋",reunion:"久别重逢",fake_relationship:"假戏真做",roommates:"同居室友",first_love:"初恋",second_chance:"破镜重圆",power_play:"权力不对等",bodyguard:"保镖与雇主",fated_foe:"宿命之敌",vampire_familiar:"血族眷属",human_monster:"人鬼恋",memory_loss:"一方失忆",fake_marriage:"假结婚",obsession:"偏执狂的爱",yandere:"病娇",tsundere:"傲娇",sunny_x_dark:"阳光配阴郁",beauty_x_beast:"美女与野兽",opposites:"性格互补",rivals:"棋逢对手",saved_by:"救命之恩",betrayal:"被信任的人背叛",mentor:"亦师亦友",strangers_love:"陌生人缘分",online_to_real:"网友奔现",reincarnated:"轮回爱人",rebound:"疗伤式恋爱",cross_species:"跨种族恋",master_servant:"主仆",childhood_enemy:"青梅竹马变仇人",fake_date:"假约会",war_time:"乱世爱情",time_diff:"跨时空通讯",ghost_lover:"人鬼情未了",dragon_rider:"与龙羁绊",demon_pact:"与恶魔交易",god_mortal:"神与凡人",fairy_human:"精灵与人",vampire_human:"吸血鬼与人",wolf_human:"狼人与人类",rival_love:"竞争对手变情侣"};
+const PLOT_CN={adventure:"冒险",mystery:"悬疑探索",growth:"成长逆袭",romance:"恋爱",dark:"黑暗致郁",sweet:"甜宠",struggle:"奋斗",revenge:"复仇",power:"权谋",survival:"生存",marriage_first:"先婚后爱",fated:"宿命纠葛",betrayal:"背叛与救赎",harem:"后宫",angst:"虐恋",comedy:"轻松搞笑",thriller:"惊悚",system:"系统流",face_slap:"打脸爽文",warm:"治愈日常",court_intrigue:"宫斗权谋",revenge_arc:"复仇线",rise_from_bottom:"废柴逆袭",hidden_identity:"隐藏身份",power_struggle:"权力斗争",escape:"逃出囚笼",murder_mystery:"连环杀人案",hidden_master:"扮猪吃虎",contract_love:"契约恋爱",amnesia:"失忆",time_pressure:"倒计时",betrayal_return:"被背叛后回归",disguise:"伪装潜入",treasure_hunt:"寻宝探险",war_love:"战争与爱情",cultivation:"修仙突破",infinite_flow:"无限副本",rebirth_adv:"重生碾压",doomsday:"末日生存",alien:"外星接触",small_town:"小镇阴谋",haunted:"闹鬼古宅",medical:"医生救死扶伤",sports_glory:"竞技夺冠",entertainment:"从龙套到影星",business_war:"商战",academy:"学院成长",crown:"夺嫡",rebellion:"起义",cursed_blood:"被诅咒的血脉",double_life:"双重身份",memory_trade:"记忆交易",magic_school:"魔法学院",dragon:"与龙同行",vampire_politics:"血族权谋",fairy_forest:"精灵森林秘密",naval:"大海战",double_spy:"双重间谍",ai_love:"人机恋",dark_desire:"黑暗欲望",obsession:"偏执占有",forbidden_love:"禁忌之恋",slow_burn:"慢热感情",angst:"虐心",thriller:"惊悚悬疑",survival_horror:"生存恐怖"};
+
 async function openWorldbook() {
   const data = await api(`/api/worldbook?worldId=${state.worldId}`);
   const w = data.world;
+  const gCN=GENRE_CN[w.genre]||w.genre;
+  const rCN=REL_CN[w.relationship_type]||w.relationship_type;
+  const pCN=PLOT_CN[w.plot_type]||w.plot_type;
+  let sp={}; try { sp=(await api(`/api/settings?worldId=${state.worldId}`)).data||{}; } catch {}
+  const customWorld=sp.worldCustom||"";
   const groups = { world:"世界", rules:"规则", power:"力量", faction:"势力", character:"人物", event:"事件", player:"玩家自定义", secret:"隐藏" };
   const entries = (data.entries || []).map(e => `<div class="section"><div class="section-title">${esc(groups[e.category] || e.category)}</div><div class="list-card"><div class="contact-name">${esc(e.title)}</div><div class="small" style="white-space:pre-wrap;margin-top:7px">${esc(e.content)}</div></div></div>`).join("");
   openSheet(`<div class="sheet-head"><div class="sheet-title">${esc(state.labels[1])}</div><button class="close" data-close>×</button></div>
     <div class="section"><div class="list-card"><div class="contact-name">世界状态 · 第 ${data.stage || 0} 阶段</div><div class="small" style="margin-top:7px">${esc(w.current_location)} · ${esc(w.current_time)} · ${esc(w.weather)}</div></div></div>
-    <div class="section"><div class="list-card"><div class="contact-name">世界背景</div><div class="small" style="white-space:pre-wrap;margin-top:7px">${esc(w.background)}</div></div></div>
+    <div class="section"><div class="list-card"><div class="contact-name">世界设定（创建后固定，不可更改）</div><div class="small" style="margin-top:7px">世界类型：${esc(gCN)}　｜　关系模式：${esc(rCN)}　｜　剧情方向：${esc(pCN)}</div><div class="small" style="white-space:pre-wrap;margin-top:10px">${esc(w.background)}</div></div></div>
+    <div class="section"><div class="form-card"><div class="contact-name">自定义世界观设定</div><div class="small" style="margin:6px 0 12px">添加你希望世界遵循的偏好或补充设定，不会改变已经发生的剧情和事件。</div><textarea id="worldCustomInput" placeholder="例如：希望世界偏黑暗风格；希望多出现酒馆场景；希望NPC说话古风一些……" style="min-height:80px">${esc(customWorld)}</textarea><button id="saveWorldCustom" class="save-full">保存设定</button></div></div>
     ${entries || emptyState("暂无可见隐藏条目", "隐藏内容会在达到条件后逐步出现。")}`);
+  $("#saveWorldCustom").onclick=async()=>{
+    const val=$("#worldCustomInput").value.trim();
+    await api(`/api/settings?worldId=${state.worldId}`,{method:"POST",body:JSON.stringify({worldId:state.worldId,data:{worldCustom:val}})});
+    alert("自定义设定已保存");
+  };
 }
 
-async function openWorldview() {
-  let sp={}; try { sp=(await api(`/api/settings?worldId=${state.worldId}`)).data||{}; } catch {}
-  openSheet(`<div class="sheet-head"><div class="sheet-title">世界观</div><button class="close" data-close>×</button></div>
-    <div class="form-card"><div class="contact-name">世界类型偏好</div>
-      <div class="small" style="margin:6px 0 12px">选择偏好方向，不改变已经发生的剧情和事件。</div>
-      <div class="field"><label>世界类型</label><input id="genrePref" value="${esc(sp.world?.genrePreference||state.world?.genre||"")}" placeholder="xianxia / urban / interstellar / cthulhu"></div>
-      <div class="field"><label>关系类型</label><input id="relPref" value="${esc(sp.world?.relationship||state.world?.relationship_type||"")}" placeholder="BG / BL / GL / beastman / poly"></div>
-      <div class="field"><label>剧情方向</label><input id="plotPref" value="${esc(sp.world?.plot||state.world?.plot_type||"")}" placeholder="adventure / mystery / dark / sweet"></div>
-      <button id="saveWorldview" class="save-full">保存</button>
-    </div>`);
-  $("#saveWorldview").onclick = async () => {
-    await api(`/api/settings?worldId=${state.worldId}`,{method:'POST',body:JSON.stringify({worldId:state.worldId,data:{world:{genrePreference:$("#genrePref").value.trim(),relationship:$("#relPref").value.trim(),plot:$("#plotPref").value.trim()}}})});
-    alert('世界观偏好已保存');
-  };
+// 背包名称按世界观变化
+const BP_NAMES={xianxia:"储物袋",wuxia:"行囊",ancient:"包袱",alternate_history:"行囊",primordial:"储物戒",palace:"妆匣",urban:"背包",campus:"书包",workplace:"公文包",entertainment:"随身包",esports:"装备包",fantasy:"次元袋",medieval:"行囊",vampire:"古董箱",norse:"兽皮袋","sci-fi":"工具包",interstellar:"物资舱",cyberpunk:"植入仓",apocalypse:"求生包",cthulhu:"调查包",infinite:"轮回匣",quick_transmigration:"系统空间",rebirth:"随身空间",supernatural:"法器袋",mystery:"侦探包",historical:"行囊",time_travel:"时空囊",villain:"魔王宝库",system:"系统背包",infinite_dungeon:"冒险者背包",vampire_noble:"血族宝匣",witch:"草药包",beastman:"兽皮袋",merfolk:"珍珠贝",ghost:"阴阳袋",cultivation_failure:"储物袋",demon_court:"鬼差袋",heaven:"仙家宝库",martial_soul:"武魂空间",mecha:"机师舱",magical_girl:"变身盒",urban_immortal:"储物戒",detective:"侦探包",game_world:"游戏背包",ice_apocalypse:"保温箱",dystopia:"物资配给包",space_opera:"星舰货舱",deep_sea:"潜水舱",time_loop:"循环记录器",parallel_world:"跨维度袋",myth_china:"仙家法宝",myth_greek:"众神之袋",myth_norse:"维京宝箱",business:"公文包",sports:"运动包",post_apocalypse_z:"求生包",sea_apocalypse:"浮囊",entertainment_rebirth:"随身包"};
+const CURRENCY_NAMES={xianxia:"灵石",wuxia:"银两",ancient:"银两",alternate_history:"银两",primordial:"功德",palace:"金锭",urban:"元",campus:"零花钱",workplace:"工资",entertainment:"片酬",esports:"奖金",fantasy:"金币",medieval:"金币",vampire:"血晶",norse:"银币","sci-fi":"信用点",interstellar:"星币",cyberpunk:"欧元点",apocalypse:"物资点",cthulhu:"理智值",infinite:"积分",quick_transmigration:"剧情点",rebirth:"气运值",supernatural:"功德",mystery:"线索点",historical:"铜钱",time_travel:"时空币",villain:"邪恶值",system:"系统币",infinite_dungeon:"冒险币",vampire_noble:"血晶",witch:"魔晶",beastman:"兽牙",merfolk:"珍珠",ghost:"冥币",cultivation_failure:"灵石",demon_court:"冥币",heaven:"仙桃",martial_soul:"武魂币",mecha:"能源块",magical_girl:"魔力晶",urban_immortal:"灵石",detective:"线索费",game_world:"金币",ice_apocalypse:"热量值",dystopia:"配给券",space_opera:"星币",deep_sea:"珍珠",time_loop:"记忆碎片",parallel_world:"维度币",myth_china:"仙桃",myth_greek:"德拉克马",myth_norse:"奥丁币",business:"资金",sports:"奖金",post_apocalypse_z:"弹药",sea_apocalypse:"淡水",entertainment_rebirth:"片酬"};
+function bpName(genre){return BP_NAMES[genre]||"背包"}
+function currencyName(genre){return CURRENCY_NAMES[genre]||"金币"}
+function getPlayerState(){try{return JSON.parse(state.world?.player_state||"{}")}catch{return {}}}
+
+async function openBackpack() {
+  const ps=getPlayerState();
+  const genre=state.world?.genre||"";
+  const name=bpName(genre);
+  const cur=ps.currency||0;
+  const curName=currencyName(genre);
+  const items=ps.inventory||[];
+  const slots=[];
+  for(let i=0;i<12;i++){
+    const it=items[i];
+    if(it){slots.push(`<div class="bp-slot" title="${esc(it.name)}">${esc(it.icon||"📦")}<span class="qty">${it.qty>1?it.qty:""}</span></div>`)}
+    else{slots.push(`<div class="bp-slot empty">·</div>`)}
+  }
+  openSheet(`<div class="sheet-head"><div class="sheet-title">${esc(name)}</div><button class="close" data-close>×</button></div>
+    <div class="bp-currency"><span class="label">${esc(curName)}</span><span class="amount">${cur}</span></div>
+    <div class="section-title">物品</div>
+    <div class="bp-grid">${slots.join("")}</div>`);
 }
 
 async function openAPI() {
@@ -444,19 +472,62 @@ async function playTTS(text,cfg,charId){
 }
 
 
+// 世界观分组
+const GENRE_GROUP={xianxia:"eastern",wuxia:"eastern",ancient:"eastern",alternate_history:"eastern",primordial:"eastern",palace:"eastern",historical:"eastern",time_travel:"eastern",cultivation_failure:"eastern",demon_court:"eastern",heaven:"eastern",martial_soul:"eastern",urban_immortal:"eastern",myth_china:"eastern",urban:"modern",campus:"modern",workplace:"modern",entertainment:"modern",esports:"modern",detective:"modern",business:"modern",sports:"modern",entertainment_rebirth:"modern",fantasy:"western",medieval:"western",vampire:"western",norse:"western",vampire_noble:"western",witch:"western",beastman:"western",merfolk:"western",ghost:"western",myth_greek:"western",myth_norse:"western",magical_girl:"western","sci-fi":"scifi",interstellar:"scifi",cyberpunk:"scifi",mecha:"scifi",space_opera:"scifi",game_world:"scifi",parallel_world:"scifi",ai_love:"scifi",apocalypse:"dark",cthulhu:"dark",infinite:"dark",quick_transmigration:"dark",rebirth:"dark",supernatural:"dark",mystery:"dark",villain:"dark",system:"dark",infinite_dungeon:"dark",ice_apocalypse:"dark",dystopia:"dark",deep_sea:"dark",time_loop:"dark",post_apocalypse_z:"dark",sea_apocalypse:"dark",survival_horror:"dark"};
+// 世界地名按世界观生成
+const WORLD_NAMES={
+  eastern:["洪荒大陆","九州","玄天大陆","苍元界","灵元大陆","九幽冥界","天衍大陆","太初界","青云界","万象大陆","蓬莱仙域","蜀山界","昆仑界","东海仙洲","北荒大陆"],
+  modern:["蓝星","地球","华国","江城","滨海市","上京市","深港市","杭城","星城","蓉城","西京市","花城","宁州","沪上市","渝州"],
+  western:["艾拉西亚大陆","诺德海姆","中土大陆","维斯洛特","自由城邦联盟","神圣帝国","幽暗地域","翡翠群岛","北境王国","沙漠苏丹国","矮人山脉","精灵森林","巨龙群岛","法师塔城","旧世界"],
+  scifi:["泽塔星系","半人马座殖民地","新地球","银河联邦","深空殖民地","轨道城","火星基地","木卫二","土卫六","跃迁枢纽","星联首都","边境星系","废弃殖民星","矿业星球","科研空间站"],
+  dark:["迷雾镇","寂静岭","幽暗港","永夜城","灰雾大陆","遗忘之地","深渊边境","无光之海","骸骨荒原","诅咒群岛","梦魇镇","虚空边界","沉沦之地","绝望谷","无名小镇"]
+};
+function worldGeoName(genre){
+  const group=GENRE_GROUP[genre]||"modern";
+  const pool=WORLD_NAMES[group]||WORLD_NAMES.modern;
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+
 async function showIntro(){
   const w=state.world||{};
   const text=w.background||"你睁开眼，发现自己来到了一个陌生的世界。";
+  const geoName=worldGeoName(w.genre||"");
   const overlay=document.createElement("div");
   overlay.className="intro-overlay";
-  overlay.innerHTML=`<div class="intro-scroll"><div class="intro-title">${esc(w.name||"CardWorld")}</div><div class="intro-text">${esc(text)}</div><div class="intro-skip">点击任意处开始</div></div>`;
+  overlay.innerHTML=`<div class="intro-mask-top"></div><div class="intro-mask-bottom"></div><div class="intro-crawl"><div class="intro-title">${esc(geoName)}</div><div class="intro-text">${esc(text)}</div><div class="intro-skip">即将进入……</div></div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener("click",()=>{overlay.remove();showPersonaForm();},{once:true});
+  let finished=false;
+  const crawl=overlay.querySelector(".intro-crawl");
+  const skip=overlay.querySelector(".intro-skip");
+  let autoTimer=null;
+  // 动态计算滚动距离：让最后一行停在屏幕中央（50%）
+  requestAnimationFrame(()=>{
+    const textH=crawl.scrollHeight;
+    const viewH=window.innerHeight;
+    const startTop=viewH*0.40; // 起始top:40%
+    const endTop=viewH*0.50-textH; // 最后一行在50%处
+    const dist=startTop-endTop;
+    crawl.style.setProperty("--scroll-dist",`-${dist}px`);
+    crawl.classList.add("scrolling");
+  });
+  crawl.addEventListener("animationend",()=>{
+    finished=true;
+    skip.classList.add("show");
+    skip.textContent="点击任意处进入";
+    autoTimer=setTimeout(()=>{
+      if(overlay.parentNode){overlay.remove();showPersonaForm();}
+    },5000);
+  });
+  overlay.addEventListener("click",()=>{
+    if(!finished)return;
+    if(autoTimer)clearTimeout(autoTimer);
+    overlay.remove();showPersonaForm();
+  });
 }
 
 async function showPersonaForm(){
   const overlay=document.createElement("div");
-  overlay.className="intro-overlay";
+  overlay.className="intro-overlay center";
   overlay.innerHTML=`<div class="persona-card">
     <div class="sheet-title" style="text-align:center;margin-bottom:16px">塑造你的角色</div>
     <div class="form-card">
@@ -474,8 +545,13 @@ async function showPersonaForm(){
     const persona=$("#pPersona").value.trim();
     const identity=$("#pIdentity").value.trim();
     await api(`/api/settings?worldId=${state.worldId}`,{method:"POST",body:JSON.stringify({worldId:state.worldId,data:{custom:{name,look,persona,identity,lore:`外貌：${look}；性格：${persona}；身份：${identity}`}}})});
+    // 生成初始场景
+    try{await api(`/api/world/init-scene`,{method:"POST",body:JSON.stringify({worldId:state.worldId,identity:identity||"普通人",name})})}catch(e){}
     localStorage.setItem(`cw_intro_${state.worldId}`,"1");
     overlay.remove();
+    await loadWorld();
+    renderWorld();
+    scrollBottom();
     openQuests();
   };
 }

@@ -1,6 +1,6 @@
 PRAGMA foreign_keys = ON;
 
-CREATE TABLE IF NOT EXISTS admin_settings (id INTEGER PRIMARY KEY CHECK (id=1), password_hash TEXT NOT NULL, updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS admin_settings (id INTEGER PRIMARY KEY CHECK (id=1), password_hash TEXT NOT NULL, ai_endpoint TEXT, ai_api_key TEXT, ai_model TEXT, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS admin_sessions (token TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS retired_cards (code TEXT PRIMARY KEY, retired_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS cards (
