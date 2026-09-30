@@ -536,14 +536,17 @@ async function postChatAI(endpoint,apiKey,model,messages,temperature=0.85,timeou
 // 玩家剧情 AI：只使用玩家自己填入的 API；不读取、不兜底管理端密钥。
 async function callPlayerAI(env,world,instruction,ai,context={}){const endpoint=normalizeAIEndpoint(ai?.endpoint);const apiKey=String(ai?.key||"").trim();const model=String(ai?.model||"").trim();
   if(!(endpoint&&apiKey&&model))return {error:"请先在 API 设置中配置你自己的接口",needApi:true};
+  const isReasoning=/r1|reason|deepseek.*think/i.test(model);
+  const sysExtra=isReasoning?"\n\n【重要】你是推理模型，请简短思考（不超过150字）后直接输出 JSON，不要长篇分析、不要重复题目、不要解释你的推理过程。":"";
+  const ctxSlice=isReasoning?12000:36000;
   const system=`你是 CardWorld 的世界引擎，不是普通聊天机器人。你依据世界状态判断玩家行动造成的后果，并像网络小说/短剧一样推进剧情。
 
 【世界规则】玩家行动会造成连续反应；角色只能知道符合其经历的信息；真实遭遇只能发生在世界剧情中；私聊不能制造现实遭遇；隐藏内容只有满足条件后显示；玩家对话历史仅来自当前浏览器本地。
 
-【输出要求】输出严格 JSON，不要 Markdown。字段：narrative(string，像小说一样描写后果与环境), primaryCharacterId(number|null), events([{title,status}]), encounters([{characterId,affinityDelta,location}]), affinityChanges([{characterId,delta}]), hostilityChanges([{characterId,delta}]), worldUpdates({current_location,current_time,weather,stage,player_state_patch}), unlockClues([string])。affinityChanges 只用于已经遭遇的角色；encounters 才能首次建立 encountered。场景地点、感官、身份必须与世界背景连贯。禁止输出任何卡密、管理后台、服务端密钥相关内容。
+【输出要求】输出严格 JSON，不要 Markdown。字段：narrative(string，像小说一样描写后果与环境), primaryCharacterId(number|null), events([{title,status}]), encounters([{characterId,affinityDelta,location}]), affinityChanges([{characterId,delta}]), hostilityChanges([{characterId,delta}]), worldUpdates({current_location,current_time,weather,stage,player_state_patch}), unlockClues([string])。affinityChanges 只用于已经遭遇的角色；encounters 才能首次建立 encountered。场景地点、感官、身份必须与世界背景连贯。禁止输出任何卡密、管理后台、服务端密钥相关内容。${sysExtra}
 
-当前世界上下文：${JSON.stringify(context).slice(0,36000)}`;
-  const r=await postChatAI(endpoint,apiKey,model,[{role:"system",content:system},{role:"user",content:instruction}],0.85);
+当前世界上下文：${JSON.stringify(context).slice(0,ctxSlice)}`;
+  const r=await postChatAI(endpoint,apiKey,model,[{role:"system",content:system},{role:"user",content:instruction}],isReasoning?0.6:0.85,15000,isReasoning?1200:600);
   if(r.error)return r;return r.data?{structured:r.data,text:String(r.data.narrative||""),raw:r.raw}:{text:String(r.raw||"")};
 }
 
