@@ -295,7 +295,7 @@ async function sendStory() {
     // 3. 浏览器直连硅基流动，流式
     let endpoint=state.ai.endpoint.replace(/\/+$/,"");
     if(!/\/chat\/completions$/.test(endpoint)){endpoint+=(/\/v\d+$/.test(endpoint)?"/chat/completions":"/v1/chat/completions");}
-    const resp=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${state.ai.key}`},body:JSON.stringify({model:state.ai.model,messages:[{role:"system",content:prep.system},{role:"user",content:prep.instruction}],temperature:prep.temperature,max_tokens:prep.maxTokens,stream:true})});
+    const resp=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${state.ai.key}`},body:JSON.stringify({model:state.ai.model,messages:[{role:"system",content:prep.system},{role:"user",content:prep.instruction}],temperature:prep.temperature,max_tokens:prep.maxTokens,stream:true,...(prep.extraBody||{})})});
     if(!resp.ok){const t=await resp.text();throw new Error(`AI API ${resp.status}: ${t.slice(0,200)}`)}
     const reader=resp.body.getReader();const decoder=new TextDecoder();let fullContent="";let lastDisplayed="";let sseBuf="";
     while(true){const {done,value}=await reader.read();if(done)break;sseBuf+=decoder.decode(value,{stream:true});
