@@ -59,18 +59,42 @@ button{border:0;background:none;color:inherit;cursor:pointer;touch-action:manipu
   border:1px solid var(--line);font-size:11px;white-space:nowrap;color:var(--muted)}
 
 .story{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
-  padding:8px 16px 160px;overscroll-behavior:contain}
+  padding:8px 14px 160px;overscroll-behavior:contain}
 .scene{max-width:720px;margin:0 auto}
-.scene-head{margin:12px 0 18px;padding:16px;border-radius:18px;background:var(--card);
-  border:1px solid var(--line)}
-.scene-line{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:12px}
-.narration{white-space:pre-wrap;line-height:1.75;font-size:16px;margin:14px 2px;color:var(--text)}
-.dialogue{margin:14px 0;padding:14px 16px;border-radius:18px;background:var(--card);
-  border:1px solid var(--line)}
-.dialogue .who{font-weight:600;margin-bottom:6px;font-size:13px;color:var(--accent)}
-.dialogue .text{white-space:pre-wrap;line-height:1.65;font-size:15px}
-.user-action{margin:14px 0 10px;padding:12px 16px;border-radius:18px;
-  background:var(--accent-soft);line-height:1.65;font-size:15px}
+
+/* ===== iMessage 风格对话气泡 ===== */
+.msg-row{display:flex;flex-direction:column;margin:3px 0;animation:msgIn .35s cubic-bezier(.32,.72,0,1)}
+.msg-row.user{align-items:flex-end}
+.msg-row.ai{align-items:flex-start}
+.msg-avatar{width:30px;height:30px;border-radius:50%;background:var(--accent-soft);
+  display:grid;place-items:center;font-size:13px;font-weight:700;color:var(--accent);
+  flex:0 0 auto;margin-right:8px}
+.msg-top{display:flex;align-items:flex-end;gap:0;width:100%}
+.msg-row.ai .msg-top{flex-direction:row}
+.msg-row.user .msg-top{flex-direction:row-reverse}
+.msg-name{font-size:11px;color:var(--muted);margin:0 0 3px 38px;font-weight:500}
+.msg-row.user .msg-name{display:none}
+.bubble{max-width:78%;padding:9px 14px;line-height:1.5;white-space:pre-wrap;
+  font-size:16px;word-break:break-word;position:relative;animation:bubblePop .3s ease}
+.bubble.ai{background:var(--card);color:var(--text);border:1px solid var(--line);
+  border-radius:20px 20px 20px 5px;margin-left:38px}
+.bubble.user{background:var(--accent);color:#fff;
+  border-radius:20px 20px 5px 20px}
+.bubble.streaming{animation:bubbleGrow .2s ease}
+.bubble .cursor{display:inline-block;width:2px;height:16px;background:currentColor;
+  margin-left:2px;vertical-align:middle;animation:blink 1s infinite;opacity:.6}
+/* 打字中指示器 */
+.typing{display:flex;align-items:center;gap:4px;padding:12px 16px;background:var(--card);
+  border:1px solid var(--line);border-radius:20px 20px 20px 5px;margin-left:38px;
+  width:fit-content;animation:msgIn .3s ease}
+.typing span{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:typingDot 1.2s infinite}
+.typing span:nth-child(2){animation-delay:.2s}
+.typing span:nth-child(3){animation-delay:.4s}
+@keyframes msgIn{from{opacity:0;transform:translateY(8px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes bubblePop{0%{transform:scale(.92);opacity:.5}60%{transform:scale(1.02)}100%{transform:scale(1);opacity:1}}
+@keyframes bubbleGrow{from{opacity:.7}to{opacity:1}}
+@keyframes blink{0%,100%{opacity:.2}50%{opacity:1}}
+@keyframes typingDot{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-4px);opacity:1}}
 
 /* 输入区 */
 .composer-wrap{position:fixed;left:0;right:0;bottom:0;z-index:20;

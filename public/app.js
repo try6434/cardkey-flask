@@ -18,7 +18,8 @@ let state = {
   sheet: null,
   ai: { endpoint: "", key: "", model: "" },
   voice: { enabled: true, autoRead: false, rate: 1, pitch: 1, volume: 1, voices: {}, api: { endpoint:"", key:"", model:"", voice:"alloy" } },
-  prefs: { theme: "system", pace: "normal" }
+  prefs: { theme: "system", pace: "normal" },
+  streaming: false
 };
 
 try { Object.assign(state, JSON.parse(localStorage.getItem(STORE) || "{}")); } catch {}
@@ -190,10 +191,21 @@ function renderWorld() {
 }
 
 function renderMessages() {
-  if (!state.messages.length) return `<div class="narration">你站在这个世界的起点。这里还没有告诉你答案，第一步要由你自己迈出。</div>`;
-  return state.messages.map(m => {
-    if (m.role === "user") return `<div class="user-action">${esc(m.content)}</div>`;
-    return `<div class="dialogue"><div class="who">${esc(characterName(m.character_id))}</div><div class="text">${esc(m.content)}</div></div>`;
+  if (!state.messages.length) return `<div class="narration" style="text-align:center;color:var(--muted);padding:40px 20px;font-size:15px">你站在这个世界的起点。<br>输入你的行动，开始故事。</div>`;
+  return state.messages.map((m,i) => {
+    const isUser = m.role === "user";
+    const isLast = i === state.messages.length - 1;
+    const name = characterName(m.character_id);
+    const initial = isUser ? "" : (name[0] || "世");
+    // 正在输入（最后一条 AI 消息且内容为空）
+    if (!isUser && isLast && state.streaming && !m.content) {
+      return `<div class="msg-row ai"><div class="msg-name">${esc(name)}</div><div class="typing"><span></span><span></span><span></span></div></div>`;
+    }
+    const streaming = (!isUser && isLast && state.streaming && m.content) ? " streaming" : "";
+    if (isUser) {
+      return `<div class="msg-row user"><div class="msg-top"><div class="bubble user">${esc(m.content)}</div></div></div>`;
+    }
+    return `<div class="msg-row ai"><div class="msg-name">${esc(name)}</div><div class="msg-top"><div class="msg-avatar">${esc(initial)}</div><div class="bubble ai${streaming}">${esc(m.content)}${streaming ? '<span class="cursor"></span>' : ''}</div></div></div>`;
   }).join("");
 }
 function characterName(id) {
@@ -286,6 +298,7 @@ async function sendStory() {
   // 插入一个空的 AI 气泡，用于流式填充
   const aiMsg={role:"assistant",character_id:null,content:"",created_at:nowMs+1};
   state.messages.push(aiMsg);
+  state.streaming=true;
   renderWorld(); scrollBottom();
 
   try {
@@ -314,12 +327,14 @@ async function sendStory() {
     aiMsg.character_id=commit.character?.id||null;
     await idbAppendStory(state.worldId,[aiMsg]);
     await refreshWorldState();
+    state.streaming=false;
     renderWorld();scrollBottom();
     if(commit.questUpdates?.permanentCard){showPermanentCard(commit.questUpdates.permanentCard);}
     else if(commit.questUpdates?.completed?.length){alert(`任务完成：${commit.questUpdates.completed.map(q=>q.title).join("、")}`);}
     if(state.voice.autoRead) speak(narrative,commit.character?.id);
   } catch(err){
     aiMsg.content="⚠️ "+err.message;
+    state.streaming=false;
     renderWorld();scrollBottom();
   } finally {
     const cur=$("#storyInput");if(cur){cur.disabled=false;cur.focus();}
