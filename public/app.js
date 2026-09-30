@@ -984,21 +984,67 @@ async function openQuests(){
     return;
   }
   const done=qs.filter(q=>q.status==="completed").length;
-  const body=qs.map(q=>`
+  const ps=getPlayerState();
+  const inv=Array.isArray(ps.inventory)?ps.inventory:[];
+  const body=qs.map((q,qi)=>{
+    const isKnowledge=q.quest_subtype==="knowledge";
+    const isItem=q.quest_subtype==="item";
+    const needsSubmit=(isKnowledge||isItem)&&q.status!=="completed";
+    return `
     <div class="list-card" style="margin-top:10px;opacity:${q.status==='completed'?0.5:1}">
-      <div class="list-row">
+      <div class="list-row" style="cursor:pointer" data-quest-toggle="${qi}">
         <div style="flex:1">
           <div class="contact-name">${q.quest_type==='main'?'⭐':'📌'} ${esc(q.title)} ${Number(q.is_adult)===1?'<span style="color:#e91e63;font-size:12px">🔞成人向</span>':''}</div>
           <div class="small">${esc(q.description)}</div>
-          <div class="small" style="color:var(--accent);margin-top:4px">条件：${esc(conditionLabel(q))}</div>
+          <div class="small" style="color:var(--accent);margin-top:4px">${isKnowledge?'📝 知识验证：需输入了解到的内容':isItem?'🎒 物品验证：需从背包提交':conditionLabel(q)}</div>
         </div>
         <div class="pill">${q.status==='completed'?'✅':'进行中'}</div>
       </div>
-    </div>`).join("");
+      ${needsSubmit?`<div id="qdetail-${qi}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+        ${isKnowledge?`
+          <div class="small" style="margin-bottom:6px">验证要求：${esc(q.verify_prompt||q.description)}</div>
+          <textarea id="qinput-${qi}" class="text-input" style="width:100%;min-height:70px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);resize:vertical" placeholder="输入你了解到的内容..."></textarea>
+          <button class="save-full" data-qsubmit="${qi}" style="margin-top:8px">提交验证</button>
+        `:''}
+        ${isItem?`
+          <div class="small" style="margin-bottom:6px">需要物品：${esc(q.verify_prompt||q.description)}</div>
+          ${inv.length?`<div style="display:flex;flex-wrap:wrap;gap:6px">${inv.map((it,ii)=>`<button class="bp-slot" data-item-submit="${qi}:${esc(it.name)}" style="cursor:pointer;font-size:20px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card)" title="${esc(it.name)}×${it.qty}">${esc(it.icon||'📦')}<span class="qty">${it.qty>1?it.qty:''}</span></button>`).join('')}</div><div class="small" style="margin-top:6px">点击背包中的物品提交</div>`:'<div class="small" style="color:var(--muted)">背包为空，需要先通过剧情获得物品</div>'}
+        `:''}
+      </div>`:''}
+    </div>`;
+  }).join("");
   const reward=qs.find(q=>q.reward_card);
   const rewardHtml=reward?`<div class="form-card" style="margin-top:14px;border:1.5px solid var(--accent)"><div class="contact-name">🎉 永久卡密奖励</div><div class="small" style="margin:8px 0">全部任务完成！这是本世界唯一的永久卡密：</div><div style="font-family:monospace;font-size:18px;letter-spacing:2px;color:var(--accent);text-align:center;padding:12px 0;font-weight:700">${esc(reward.reward_card)}</div></div>`
     :`<div class="form-card" style="margin-top:14px"><div class="small">完成全部 3 个任务可获得本世界唯一的永久卡密（${done}/3 已完成）</div></div>`;
   openSheet(`<div class="sheet-head"><div class="sheet-title">任务</div><button class="close" data-close>×</button></div>${body}${rewardHtml}`);
+  // 绑定展开/提交
+  document.querySelectorAll("[data-quest-toggle]").forEach(el=>{
+    el.onclick=()=>{const i=el.dataset.questToggle;const d=$(`#qdetail-${i}`);if(d)d.style.display=d.style.display==="none"?"block":"none";};
+  });
+  document.querySelectorAll("[data-qsubmit]").forEach(btn=>{
+    btn.onclick=async()=>{
+      const i=Number(btn.dataset.qsubmit);const q=qs[i];const input=$(`#qinput-${i}`);const val=input?input.value.trim():"";
+      if(!val){alert("请输入内容");return;}
+      if(!ownAPIReady()){alert("请先配置 API 设置");openAPI();return;}
+      btn.disabled=true;btn.textContent="验证中...";
+      try{
+        const r=await api("/api/quests/submit",{method:"POST",body:JSON.stringify({worldId:state.worldId,questId:q.id,submission:val,ai:state.ai})});
+        if(r.verified){alert("✅ 验证通过！任务完成");if(r.permanentCard)showPermanentCard(r.permanentCard);await loadWorld(state.worldId);if(state.sheet)state.sheet.remove();openQuests();}
+        else{alert("❌ 验证未通过："+(r.reason||"内容不满足要求"));btn.disabled=false;btn.textContent="提交验证";}
+      }catch(e){alert("验证失败："+e.message);btn.disabled=false;btn.textContent="提交验证";}
+    };
+  });
+  document.querySelectorAll("[data-item-submit]").forEach(btn=>{
+    btn.onclick=async()=>{
+      const [qi,itemName]=btn.dataset.itemSubmit.split(":");const q=qs[Number(qi)];
+      if(!confirm(`确认提交「${itemName}」完成任务「${q.title}」？`))return;
+      try{
+        const r=await api("/api/quests/submit",{method:"POST",body:JSON.stringify({worldId:state.worldId,questId:q.id,submission:itemName})});
+        if(r.verified){alert("✅ 物品已提交，任务完成！");if(r.permanentCard)showPermanentCard(r.permanentCard);await loadWorld(state.worldId);if(state.sheet)state.sheet.remove();openQuests();}
+        else{alert("❌ "+(r.reason||"提交失败"));}
+      }catch(e){alert("提交失败："+e.message);}
+    };
+  });
 }
 
 function showPermanentCard(code){
