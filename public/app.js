@@ -40,22 +40,29 @@ async function api(path, options = {}) {
   let data = null;
   try { data = await res.json(); } catch {}
   if (!res.ok) {
-    if (state.worldId && (res.status === 401 || res.status === 410) && !path.startsWith("/api/auth/")) { state.sessionToken = ""; save(); renderLogin(); }
+    if (state.worldId && (res.status === 401 || res.status === 410) && !path.startsWith("/api/auth/")) { idbDelete(state.worldId).catch(()=>{}); state.sessionToken = ""; save(); renderLogin(); }
     throw Object.assign(new Error(data?.error || `请求失败 ${res.status}`), { data, status: res.status });
   }
   return data;
 }
 
+const IDB_NAME = "cardworld_worlds_v1";
+function idbOpen(){return new Promise((resolve,reject)=>{const req=indexedDB.open(IDB_NAME,1);req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains("worlds"))db.createObjectStore("worlds",{keyPath:"worldId"})};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
+async function idbGet(wid){const db=await idbOpen();return new Promise((resolve,reject)=>{const rq=db.transaction("worlds","readonly").objectStore("worlds").get(wid);rq.onsuccess=()=>resolve(rq.result||{worldId:wid,messages:[],contacts:{}});rq.onerror=()=>reject(rq.error)})}
+async function idbPut(obj){const db=await idbOpen();return new Promise((resolve,reject)=>{const tx=db.transaction("worlds","readwrite");tx.objectStore("worlds").put(obj);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error)})}
+async function idbDelete(wid){const db=await idbOpen();return new Promise((resolve,reject)=>{const tx=db.transaction("worlds","readwrite");tx.objectStore("worlds").delete(wid);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error)})}
+async function idbAppendStory(wid,msgs){const cur=await idbGet(wid);cur.messages=(cur.messages||[]).concat(msgs).slice(-800);await idbPut(cur)}
+async function idbLoadStory(wid){return (await idbGet(wid)).messages||[]}
+async function idbAppendContact(wid,cid,msgs){const cur=await idbGet(wid);cur.contacts=cur.contacts||{};cur.contacts[cid]=(cur.contacts[cid]||[]).concat(msgs).slice(-300);await idbPut(cur)}
+async function idbLoadContact(wid,cid){return (await idbGet(wid)).contacts?.[cid]||[]}
+
+async function refreshWorldState(){
+  const data=await api(`/api/world?id=${state.worldId}`);
+  state.world=data.world; state.characters=data.characters||[]; state.events=data.events||[]; state.quests=data.quests||[]; state.labels=data.labels||state.labels; save(); return data;
+}
 async function loadWorld() {
-  const data = await api(`/api/world?id=${state.worldId}`);
-  try { const settings = await api(`/api/settings?worldId=${state.worldId}`); const d = settings.data || {}; state.prefs = { ...state.prefs, ...(d.plot || {}), ...(d.appearance || {}) }; state.voice = { ...state.voice, ...(d.voice || {}) }; applyTheme(); } catch {}
-  state.world = data.world;
-  state.characters = data.characters || [];
-  state.messages = data.messages || [];
-  state.events = data.events || [];
-  state.quests = data.quests || [];
-  state.labels = data.labels || state.labels;
-  save();
+  await refreshWorldState();
+  state.messages = await idbLoadStory(state.worldId);
   const introKey = `cw_intro_${state.worldId}`;
   const needIntro = !localStorage.getItem(introKey);
   if (needIntro) {
@@ -263,11 +270,18 @@ async function sendStory() {
   if (!ownAPIReady()) { alert("开始剧情前，请先在「API 设置」中配置你自己的接口。"); openAPI(); return; }
   input.disabled = true;
   try {
+    const localMessages=(state.messages||[]).map(m=>({role:m.role,content:String(m.content||"").slice(0,800)})).slice(-40);
     const data = await api("/api/story/message", {
       method: "POST",
-      body: JSON.stringify({ worldId: state.worldId, content, ai: state.ai.endpoint ? state.ai : null })
+      body: JSON.stringify({ worldId: state.worldId, content, ai: state.ai, localMessages })
     });
-    await loadWorld();
+    const nowMs=Date.now();
+    const userMsg={role:"user",character_id:null,content,created_at:nowMs};
+    const aiMsg={role:"assistant",character_id:data.character?.id||null,content:data.reply||"世界回应了你的行动。",created_at:nowMs+1};
+    state.messages.push(userMsg,aiMsg);
+    await idbAppendStory(state.worldId,[userMsg,aiMsg]);
+    await refreshWorldState();
+    renderWorld(); scrollBottom();
     if (data.questUpdates?.permanentCard) { showPermanentCard(data.questUpdates.permanentCard); }
     else if (data.questUpdates?.completed?.length) { alert(`任务完成：${data.questUpdates.completed.map(q=>q.title).join("、")}`); }
     if (state.voice.autoRead) speak(data.reply, data.character?.id);
@@ -292,9 +306,9 @@ async function openContactChat(cid) {
   const contact = state.contacts.find(c => Number(c.id) === Number(cid));
   if (!contact) return;
   state.activeContact = contact;
-  const data = await api(`/api/contact/messages?worldId=${state.worldId}&characterId=${cid}`);
+  state.contactHistory = await idbLoadContact(state.worldId,cid);
   openSheet(`<div class="sheet-head"><div><div class="sheet-title">${esc(contact.name)}</div><div class="small">好感度 ${contact.affinity}</div></div><button class="close" data-close>×</button></div>
-    <div id="contactMessages" class="contact-chat">${(data.messages || []).map(m => `<div class="bubble ${m.role === "user" ? "me" : "them"}">${esc(m.content)}</div>`).join("") || `<div class="small">还没有私聊消息。</div>`}</div>
+    <div id="contactMessages" class="contact-chat">${(state.contactHistory || []).map(m => `<div class="bubble ${m.role === "user" ? "me" : "them"}">${esc(m.content)}</div>`).join("") || `<div class="small">还没有私聊消息。</div>`}</div>
     <div class="contact-compose"><input id="contactInput" placeholder="发送消息"><button id="contactSend">↑</button></div>`);
   $("#contactSend").onclick = sendContact;
   $("#contactInput").addEventListener("keydown", e => { if (e.key === "Enter") sendContact(); });
@@ -308,8 +322,15 @@ async function sendContact() {
   if (!ownAPIReady()) { alert("私聊前，请先在「API 设置」中配置你自己的接口。"); openAPI(); return; }
   input.disabled = true;
   try {
-    const data = await api("/api/contact/message", { method: "POST", body: JSON.stringify({ worldId: state.worldId, characterId: contact.id, content, ai: state.ai.endpoint ? state.ai : null }) });
+    const localMessages=(state.contactHistory||[]).map(m=>({role:m.role,content:String(m.content||"").slice(0,800)})).slice(-20);
+    const data = await api("/api/contact/message", { method: "POST", body: JSON.stringify({ worldId: state.worldId, characterId: contact.id, content, ai: state.ai, localMessages }) });
+    const nowMs=Date.now();
+    const userMsg={role:"user",content,created_at:nowMs};
+    const aiMsg={role:"assistant",content:data.reply,created_at:nowMs+1};
+    state.contactHistory.push(userMsg,aiMsg);
+    await idbAppendContact(state.worldId,contact.id,[userMsg,aiMsg]);
     $("#contactMessages").insertAdjacentHTML("beforeend", `<div class="bubble me">${esc(content)}</div><div class="bubble them">${esc(data.reply)}</div>`);
+    contact.affinity=data.contact?.affinity??contact.affinity;
     input.value = "";
     if (state.voice.autoRead) speak(data.reply, contact.id);
   } catch (err) { alert(err.message); }
@@ -549,11 +570,14 @@ async function showPersonaForm(){
     const persona=$("#pPersona").value.trim();
     const identity=$("#pIdentity").value.trim();
     await api(`/api/settings?worldId=${state.worldId}`,{method:"POST",body:JSON.stringify({worldId:state.worldId,data:{custom:{name,look,persona,identity,lore:`外貌：${look}；性格：${persona}；身份：${identity}`}}})});
-    // 生成初始场景
-    try{await api(`/api/world/init-scene`,{method:"POST",body:JSON.stringify({worldId:state.worldId,identity:identity||"普通人",name})})}catch(e){}
+    // 生成初始场景；剧情只保存在本机 IndexedDB
+    let scene="你睁开眼，发现自己来到了这个世界。";
+    try{const r=await api(`/api/world/init-scene`,{method:"POST",body:JSON.stringify({worldId:state.worldId,identity:identity||"普通人",name})});scene=r.scene||scene}catch(e){}
+    const firstMsg={role:"assistant",character_id:null,content:scene,created_at:Date.now()};
+    state.messages=[firstMsg]; await idbAppendStory(state.worldId,[firstMsg]);
     localStorage.setItem(`cw_intro_${state.worldId}`,"1");
     overlay.remove();
-    await loadWorld();
+    await refreshWorldState();
     renderWorld();
     scrollBottom();
     openQuests();
