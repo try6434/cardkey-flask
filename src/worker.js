@@ -564,12 +564,12 @@ async function generateQuestsAI(env,wid,ai){
 
 规则：
 - 恰好3个任务：1个 quest_type=main，2个 quest_type=side。
-- 其中1个支线必须 is_adult=1，condition_type="dark_pair"，condition_value 填某个角色id或"any"。成人向任务描述暗示情欲/沉沦/爱恨交织，但不露骨。
+- 其中1个支线必须 is_adult=1，且 quest_subtype="item"，condition_type="item"。成人向任务要求玩家通过剧情发展获取一件特定物品（如信物、私密物品、关键道具等），放入背包后提交给任务。verify_prompt 写明需要什么物品，物品名称要具体且与世界/角色相关，暗示情欲/沉沦/爱恨交织但不露骨。
 - quest_subtype 决定完成方式：
   - "auto"：系统自动检测完成（condition_type 用 stage/clues/affinity/hostility/dark_pair/event）。
   - "knowledge"：知识类任务，玩家需点击任务输入了解到的内容，AI 验证后通过。condition_type="knowledge"，verify_prompt 写明玩家需要了解什么传闻/秘密/信息。
   - "item"：物品类任务，玩家需通过剧情获得物品并放入背包，点击任务提交物品。condition_type="item"，verify_prompt 写明需要什么物品。
-- 3个任务中至少1个是 knowledge 或 item 子类型，确保玩家需要主动提交验证，不能只靠聊天自动完成。
+- 3个任务中，主线用 auto，1个支线用 knowledge（玩家输入验证），1个支线是成人向 item（玩家获取物品提交）。确保玩家需要主动提交验证，不能只靠聊天自动完成。
 - condition_type 可选：stage(剧情阶段达到N), clues(解锁N条线索), affinity(对某角色好感≥N, value="角色id:阈值"), hostility(对某角色敌意≥N), dark_pair(同一角色好感≥90且敌意≥90), event(某事件完成), knowledge(知识验证), item(物品验证)。
 - 主线任务 quest_subtype 用 "auto"，condition_type 用 stage，condition_value 建议 5-8。
 - verify_prompt 要具体描述验证标准，例如 knowledge："玩家需要说出城主失踪当晚的真正去向"；item："玩家需要持有刻有家族纹章的玉佩"。
