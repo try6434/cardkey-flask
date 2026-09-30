@@ -263,34 +263,73 @@ function focusStory() { setTimeout(() => $("#storyInput")?.focus(), 40); }
 function scrollBottom() { setTimeout(() => { const s = $("#story"); if (s) s.scrollTop = s.scrollHeight; }, 40); }
 
 function ownAPIReady() { const a=state.ai||{}; return !!(a.endpoint&&a.key&&a.model); }
+// 从流式 JSON 片段中提取 narrative 文本用于实时显示
+function extractNarrative(raw){
+  const m=raw.match(/"narrative"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+  if(!m) return "";
+  try { return m[1].replace(/\\n/g,"\n").replace(/\\"/g,'"').replace(/\\\\/g,"\\"); }
+  catch { return m[1]; }
+}
+
 async function sendStory() {
   const input = $("#storyInput");
   const content = input.value.trim();
   if (!content || input.disabled) return;
   if (!ownAPIReady()) { alert("开始剧情前，请先在「API 设置」中配置你自己的接口。"); openAPI(); return; }
-  input.disabled = true;
+  input.disabled = true; input.value = "";
+
+  // 1. 立即显示用户消息
+  const nowMs=Date.now();
+  const userMsg={role:"user",character_id:null,content,created_at:nowMs};
+  state.messages.push(userMsg);
+  await idbAppendStory(state.worldId,[userMsg]);
+  // 插入一个空的 AI 气泡，用于流式填充
+  const aiMsg={role:"assistant",character_id:null,content:"",created_at:nowMs+1};
+  state.messages.push(aiMsg);
+  renderWorld(); scrollBottom();
+
   try {
-    const localMessages=(state.messages||[]).map(m=>({role:m.role,content:String(m.content||"").slice(0,800)})).slice(-40);
-    const data = await api("/api/story/message", {
-      method: "POST",
-      body: JSON.stringify({ worldId: state.worldId, content, ai: state.ai, localMessages })
-    });
-    const nowMs=Date.now();
-    const userMsg={role:"user",character_id:null,content,created_at:nowMs};
-    const aiMsg={role:"assistant",character_id:data.character?.id||null,content:data.reply||"世界回应了你的行动。",created_at:nowMs+1};
-    state.messages.push(userMsg,aiMsg);
-    await idbAppendStory(state.worldId,[userMsg,aiMsg]);
+    const localMessages=(state.messages||[]).filter(m=>m.content).map(m=>({role:m.role,content:String(m.content).slice(0,800)})).slice(-40);
+    // 2. 向 worker 要系统提示
+    const prep=await api("/api/story/prepare",{method:"POST",body:JSON.stringify({worldId:state.worldId,content,localMessages,model:state.ai.model})});
+    // 3. 浏览器直连硅基流动，流式
+    let endpoint=state.ai.endpoint.replace(/\/+$/,"");
+    if(!/\/chat\/completions$/.test(endpoint)){endpoint+=(/\/v\d+$/.test(endpoint)?"/chat/completions":"/v1/chat/completions");}
+    const resp=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${state.ai.key}`},body:JSON.stringify({model:state.ai.model,messages:[{role:"system",content:prep.system},{role:"user",content:prep.instruction}],temperature:prep.temperature,max_tokens:prep.maxTokens,stream:true})});
+    if(!resp.ok){const t=await resp.text();throw new Error(`AI API ${resp.status}: ${t.slice(0,200)}`)}
+    const reader=resp.body.getReader();const decoder=new TextDecoder();let fullContent="";let lastDisplayed="";let sseBuf="";
+    while(true){const {done,value}=await reader.read();if(done)break;sseBuf+=decoder.decode(value,{stream:true});
+      const lines=sseBuf.split("\n");sseBuf=lines.pop()||"";
+      for(const line of lines){if(!line.startsWith("data: "))continue;const payload=line.slice(6).trim();if(payload==="[DONE]")continue;try{const j=JSON.parse(payload);fullContent+=j.choices?.[0]?.delta?.content||"";}catch{}}
+      const display=extractNarrative(fullContent);
+      if(display&&display!==lastDisplayed){lastDisplayed=display;aiMsg.content=display;renderWorld();scrollBottom();}
+    }
+    // 4. 流结束，解析完整 JSON 提交给 worker
+    const parsed=parseJsonLocal(fullContent);
+    const narrative=parsed?.narrative||fullContent.slice(0,1500);
+    aiMsg.content=narrative;
+    state.messages[state.messages.length-1]=aiMsg;
+    await idbAppendStory(state.worldId,[aiMsg]);
+    const commit=await api("/api/story/commit",{method:"POST",body:JSON.stringify({worldId:state.worldId,raw:fullContent})});
+    aiMsg.character_id=commit.character?.id||null;
+    await idbAppendStory(state.worldId,[aiMsg]);
     await refreshWorldState();
-    renderWorld(); scrollBottom();
-    if (data.questUpdates?.permanentCard) { showPermanentCard(data.questUpdates.permanentCard); }
-    else if (data.questUpdates?.completed?.length) { alert(`任务完成：${data.questUpdates.completed.map(q=>q.title).join("、")}`); }
-    if (state.voice.autoRead) speak(data.reply, data.character?.id);
-  } catch (err) {
-    alert(err.message);
+    renderWorld();scrollBottom();
+    if(commit.questUpdates?.permanentCard){showPermanentCard(commit.questUpdates.permanentCard);}
+    else if(commit.questUpdates?.completed?.length){alert(`任务完成：${commit.questUpdates.completed.map(q=>q.title).join("、")}`);}
+    if(state.voice.autoRead) speak(narrative,commit.character?.id);
+  } catch(err){
+    aiMsg.content="⚠️ "+err.message;
+    renderWorld();scrollBottom();
   } finally {
-    const current = $("#storyInput");
-    if (current) { current.disabled = false; current.value = ""; current.dispatchEvent(new Event("input")); current.focus(); }
+    const cur=$("#storyInput");if(cur){cur.disabled=false;cur.focus();}
   }
+}
+
+function parseJsonLocal(text){
+  try{return JSON.parse(text);}catch{}
+  const m=text.match(/\{[\s\S]*\}/);if(m){try{return JSON.parse(m[0]);}catch{}}
+  return null;
 }
 
 async function openContacts() {
