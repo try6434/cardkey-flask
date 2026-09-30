@@ -164,7 +164,7 @@ function renderWorld() {
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button id="questBtn" class="quest-btn" title="任务">📜</button>
-          <div class="pill">${esc(String(w.genre || "").toUpperCase())}</div>
+          <div class="pill">${esc(genreCN(w.genre))}</div>
         </div>
       </div>
       <main id="story" class="story">
@@ -190,12 +190,23 @@ function renderWorld() {
   if(bpEl)bpEl.textContent=bpName(state.world?.genre||"");
 }
 
+function avatarHTML(avatar,size){
+  if(!avatar)return "";
+  if(avatar.startsWith("data:"))return `<img src="${avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+  return avatar;
+}
+function charAvatar(charId){
+  const avs=state.prefs?.charAvatars||{};
+  return avs[charId]||"";
+}
 function renderMessages() {
   if (!state.messages.length) return `<div class="narration" style="text-align:center;color:var(--muted);padding:40px 20px;font-size:15px">你站在这个世界的起点。<br>输入你的行动，开始故事。</div>`;
   return state.messages.map((m,i) => {
     const isUser = m.role === "user";
     const isLast = i === state.messages.length - 1;
     const name = characterName(m.character_id);
+    const cid=String(m.character_id||"world");
+    const customAvatar=charAvatar(cid);
     const initial = isUser ? "" : (name[0] || "世");
     // 正在输入（最后一条 AI 消息且内容为空）
     if (!isUser && isLast && state.streaming && !m.content) {
@@ -204,14 +215,51 @@ function renderMessages() {
     const streaming = (!isUser && isLast && state.streaming && m.content) ? " streaming" : "";
     if (isUser) {
       const avatar=state.prefs?.avatar||"🧑";
-      return `<div class="msg-row user"><div class="msg-top"><div class="bubble user">${esc(m.content)}</div><div class="msg-avatar user-avatar">${avatar}</div></div></div>`;
+      return `<div class="msg-row user"><div class="msg-top"><div class="bubble user">${esc(m.content)}</div><div class="msg-avatar user-avatar" style="overflow:hidden">${avatarHTML(avatar)}</div></div></div>`;
     }
-    return `<div class="msg-row ai"><div class="msg-name">${esc(name)}</div><div class="msg-top"><div class="msg-avatar">${esc(initial)}</div><div class="bubble ai${streaming}">${esc(m.content)}${streaming ? '<span class="cursor"></span>' : ''}</div></div></div>`;
+    const avatarContent=customAvatar?avatarHTML(customAvatar):esc(initial);
+    return `<div class="msg-row ai"><div class="msg-name">${esc(name)}</div><div class="msg-top"><div class="msg-avatar char-avatar-click" data-cid="${cid}" data-cname="${esc(name)}" style="overflow:hidden;cursor:pointer">${avatarContent}</div><div class="bubble ai${streaming}">${esc(m.content)}${streaming ? '<span class="cursor"></span>' : ''}</div></div></div>`;
   }).join("");
 }
 function characterName(id) {
   if (!id) return "世界";
   return state.characters.find(c => Number(c.id) === Number(id))?.name || "世界";
+}
+function genreCN(g){
+  const map={
+    "xianxia":"仙侠","xuanhuan":"玄幻","wuxia":"武侠","cyberpunk":"赛博朋克",
+    "post_apocalyptic":"废土末日","steampunk":"蒸汽朋克","space_opera":"星际歌剧",
+    "urban_fantasy":"都市异能","historical":"历史穿越","scifi":"科幻","mystery":"悬疑推理",
+    "horror":"恐怖惊悚","romance":"言情","slice_of_life":"日常","school":"校园",
+    "idol_entertainment":"娱乐圈","e_sports":"电竞","medical":"医疗","legal":"律政",
+    "military":"军事","mafia":"黑帮","vampire":"吸血鬼","werewolf":"狼人","fairy_tale":"童话",
+    "mythology":"神话","dystopia":"反乌托邦","utopia":"乌托邦","time_travel":"时间穿越",
+    "quick_transmigration":"快穿","reincarnation":"重生","system_flow":"系统流",
+    "infinite_flow":"无限流","cultivation":"修真","magic":"魔法","dragon_rider":"龙骑士",
+    "pirate":"海盗","ninja":"忍者","knight":"骑士","detective":"侦探","spy":"谍战",
+    "apartment":"公寓","coffee_shop":"咖啡馆","hospital":"医院","palace":"宫廷",
+    "sect":"宗门","empire":"帝国","wasteland":"荒原","underwater":"海底世界",
+    "virtual_reality":"虚拟现实","game_world":"游戏世界","isekai":"异世界",
+    "modern":"现代都市","ancient":"古代","republic":"民国","tang_dynasty":"唐朝",
+    "song_dynasty":"宋朝","ming_dynasty":"明朝","qing_dynasty":"清朝",
+    "three_kingdoms":"三国","spring_autumn":"春秋战国","sengoku":"战国",
+    "victorian":"维多利亚","western":"西部荒野","noir":"黑色电影",
+    "superhero":"超级英雄","mutant":"变种人","ghost":"灵异","demon":"妖魔",
+    "gods":"封神","immortal":"神仙","beast_tamer":"御兽","alchemy":"炼丹",
+    "formation":"阵法","talisman":"符箓","sword_immortal":"剑仙","demon_cult":"魔教",
+    "righteous_path":"正道","jianghu":"江湖","martial_arts":"武林",
+    "court_politics":"宫廷斗争","harem":"后宫","revenge":"复仇","coming_of_age":"成长",
+    "war":"战争","peace":"和平","survival":"生存","adventure":"冒险",
+    "exploration":"探索","treasure_hunt":"寻宝","tomb_raider":"盗墓",
+    "hidden_identity":"隐藏身份","dual_identity":"双重身份","amnesia":"失忆",
+    "contract":"契约","marriage_of_convenience":"协议婚姻","enemies_to_lovers":"相爱相杀",
+    "childhood_sweetheart":"青梅竹马","boss_employee":"上司下属","teacher_student":"师生",
+    "doctor_patient":"医患","cop_criminal":"警匪","rich_poor":"贫富差距",
+    "age_gap":"年龄差","long_distance":"异地恋","secret_love":"暗恋",
+    "love_triangle":"三角恋","polyamory":"多角恋","forbidden_love":"禁忌恋"
+  };
+  const key=String(g||"").toLowerCase().trim();
+  return map[key]||String(g||"未知").toUpperCase();
 }
 function emojiPanel() {
   const emojis = ["😀","😄","🥹","😂","🙂","😌","😍","🥰","😳","😎","🤔","😐","😮","😴","😭","😡","❤️","🖤","✨","🌙","🔥","🌸","🌧️","☀️","🍵","🍎","🎵","🎮","🫶","👍","👀","🙏","💫","🪽","🐺","🐈","🦊","🐉","☕","📖","⚔️","🗡️","🏹","🔮"];
@@ -237,6 +285,11 @@ function bindWorldUI() {
   });
   send.onclick = sendStory;
   input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendStory(); } });
+
+  // NPC 头像点击更换
+  document.querySelectorAll(".char-avatar-click").forEach(el=>{
+    el.onclick=()=>openCharAvatarEditor(el.dataset.cid,el.dataset.cname);
+  });
 
   $("#emojiBtn").onclick = () => {
     state.emojiOpen = !state.emojiOpen;
@@ -617,15 +670,31 @@ async function showIntro(){
   });
 }
 
+const RANDOM_IDENTITIES=[
+  "落魄剑客，被师门逐出师门","富家千金，家族企业濒临破产","药店学徒，偶然得到一本古方","镖局趟子手，第一次走镖就遇伏",
+  "酒馆店小二，听多了江湖秘辛","戏班花旦，真实身份是细作","采药女，在深山捡到失忆男子","铁匠之子，打造出一把会说话的剑",
+  "书生，进京赶考途中盘缠被偷","捕快，接手一桩无人敢查的命案","宫女，无意间撞破后宫秘密","商贩，倒卖一件不该卖的东西",
+  "佣兵，接了一单有去无回的委托","祭司学徒，第一次祈福就引来异象","海盗水手，船沉后唯一幸存者","学院新生，入学测试测出罕见属性",
+  "管家之子，替少爷顶罪被流放","歌姬，一曲惊动微服私访的大人物","医者，治好了不该治的人","刺客，目标竟是自己失散多年的亲人",
+  "邮差，投递一封不该被拆开的信","厨师，做的菜让食客说出了秘密","守墓人，发现一座空了的新坟","更夫，打更时看到不该看的东西",
+  "绣娘，绣品里藏着谋反密信","车夫，拉的乘客身上带着血","渔夫，网到一条会说话的鱼","樵夫，砍柴时捡到一枚滴血的玉佩",
+  "赌徒，输光后被人塞了一张纸条","乞丐，乞讨时有人叫出了他的真名","花匠，种出一朵黑色的花","钟表匠，修好了一块倒着走的表",
+  "图书馆管理员，发现一本没有作者的书","快递员，包裹里渗出了液体","加油站新员工，凌晨三点油泵自己启动","便利店夜班店员，总有客人凌晨三点准时出现",
+  "公司实习生，发现了领导的秘密","护士，病房里的病人从不睡觉","消防员，火场里听到有人叫自己名字","记者，调查一篇不能发的报道"
+];
+
 async function showPersonaForm(){
   const overlay=document.createElement("div");
   overlay.className="intro-overlay center";
   const presetAvatars=["🧑","👩","🧔","👱","🧑‍🦰","👨‍🦱","👩‍🦳","🧑‍🎤","🦸","🧙","🥷","👸","🤴","🧛","🧝","🐱","🐺","🦊","🐉","👻"];
   const currentAvatar=state.prefs?.avatar||"🧑";
+  const isImageAvatar=currentAvatar.startsWith("data:");
   overlay.innerHTML=`<div class="persona-card">
     <div class="sheet-title" style="text-align:center;margin-bottom:8px">塑造你的角色</div>
     <div style="text-align:center;margin-bottom:14px">
-      <div id="avatarPreview" style="width:64px;height:64px;border-radius:50%;background:var(--accent-soft);display:grid;place-items:center;font-size:32px;margin:0 auto 8px">${currentAvatar}</div>
+      <div id="avatarPreview" style="width:64px;height:64px;border-radius:50%;background:var(--accent-soft);display:grid;place-items:center;font-size:32px;margin:0 auto 8px;overflow:hidden;background-size:cover;background-position:center">${isImageAvatar?`<img src="${currentAvatar}" style="width:100%;height:100%;object-fit:cover">`:currentAvatar}</div>
+      <input type="file" id="avatarUpload" accept="image/*" style="display:none">
+      <button id="uploadAvatarBtn" style="font-size:12px;padding:4px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--muted);cursor:pointer;margin-bottom:8px">📷 上传图片头像</button>
       <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:280px;margin:0 auto">
         ${presetAvatars.map(e=>`<button class="avatar-pick" data-avatar="${e}" style="width:36px;height:36px;border-radius:50%;border:${e===currentAvatar?'2px solid var(--accent)':'1px solid var(--line)'};background:var(--bg);font-size:18px;cursor:pointer">${e}</button>`).join("")}
       </div>
@@ -634,25 +703,43 @@ async function showPersonaForm(){
       <div class="field"><label>你的名字</label><input id="pName" placeholder="给自己取个名字"></div>
       <div class="field"><label>外貌特征</label><input id="pLook" placeholder="例如：黑衣、佩剑"></div>
       <div class="field"><label>性格</label><input id="pPersona" placeholder="例如：冷静、话少、重情义"></div>
-      <div class="field"><label>身份/背景</label><input id="pIdentity" placeholder="例如：落魄剑客、富家千金"></div>
+      <div class="field"><label>身份/背景 <span id="randomIdentityBtn" style="font-size:11px;color:var(--accent);cursor:pointer">🎲 随机一个</span></label><input id="pIdentity" placeholder="留空则随机分配身份"></div>
     </div>
     <button id="pSubmit" class="save-full">进入世界</button>
   </div>`;
   document.body.appendChild(overlay);
   let selectedAvatar=currentAvatar;
+  const updatePreview=(av)=>{
+    const prev=$("#avatarPreview");
+    if(av.startsWith("data:")){prev.innerHTML=`<img src="${av}" style="width:100%;height:100%;object-fit:cover">`;}
+    else{prev.innerHTML=av;}
+  };
   overlay.querySelectorAll(".avatar-pick").forEach(btn=>{
     btn.onclick=()=>{
       selectedAvatar=btn.dataset.avatar;
-      $("#avatarPreview").textContent=selectedAvatar;
+      updatePreview(selectedAvatar);
       overlay.querySelectorAll(".avatar-pick").forEach(b=>b.style.border="1px solid var(--line)");
       btn.style.border="2px solid var(--accent)";
     };
   });
+  $("#uploadAvatarBtn").onclick=()=>$("#avatarUpload").click();
+  $("#avatarUpload").onchange=(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=()=>{selectedAvatar=reader.result;updatePreview(selectedAvatar);
+      overlay.querySelectorAll(".avatar-pick").forEach(b=>b.style.border="1px solid var(--line)");};
+    reader.readAsDataURL(file);
+  };
+  $("#randomIdentityBtn").onclick=()=>{
+    const rid=RANDOM_IDENTITIES[Math.floor(Math.random()*RANDOM_IDENTITIES.length)];
+    $("#pIdentity").value=rid;
+  };
   $("#pSubmit").onclick=async()=>{
     const name=$("#pName").value.trim()||"无名者";
     const look=$("#pLook").value.trim();
     const persona=$("#pPersona").value.trim();
-    const identity=$("#pIdentity").value.trim();
+    let identity=$("#pIdentity").value.trim();
+    if(!identity){identity=RANDOM_IDENTITIES[Math.floor(Math.random()*RANDOM_IDENTITIES.length)];}
     state.prefs.avatar=selectedAvatar;
     save();
     await api(`/api/settings?worldId=${state.worldId}`,{method:"POST",body:JSON.stringify({worldId:state.worldId,data:{custom:{name,look,persona,identity,lore:`外貌：${look}；性格：${persona}；身份：${identity}`}}})});
@@ -667,6 +754,42 @@ async function showPersonaForm(){
     renderWorld();
     scrollBottom();
     openQuests();
+  };
+}
+
+function openCharAvatarEditor(cid,cname){
+  const npcPresets=["🧙","🧝","🧛","🧟","👸","🤴","🥷","🦸","🧑‍⚕️","👮","🧑‍🍳","🧑‍🎨","🧑‍🚀","🧑‍💼","👩‍🎤","🧔","👱","🧑‍🦰","👨‍🦱","🐱","🐺","🦊","🐉","👻","💀","🤖","👽"];
+  const current=charAvatar(cid)||cname[0]||"?";
+  const isImg=current.startsWith("data:");
+  const overlay=document.createElement("div");
+  overlay.className="intro-overlay center";
+  overlay.innerHTML=`<div class="persona-card" style="max-width:340px">
+    <div class="sheet-title" style="text-align:center;margin-bottom:8px">更换「${esc(cname)}」头像</div>
+    <div style="text-align:center;margin-bottom:14px">
+      <div id="charAvatarPrev" style="width:64px;height:64px;border-radius:50%;background:var(--accent-soft);display:grid;place-items:center;font-size:32px;margin:0 auto 8px;overflow:hidden">${isImg?`<img src="${current}" style="width:100%;height:100%;object-fit:cover">`:current}</div>
+      <input type="file" id="charAvatarUpload" accept="image/*" style="display:none">
+      <button id="charUploadBtn" style="font-size:12px;padding:4px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--muted);cursor:pointer;margin-bottom:8px">📷 上传图片</button>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:280px;margin:0 auto">
+        ${npcPresets.map(e=>`<button class="npc-av-pick" data-av="${e}" style="width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--bg);font-size:18px;cursor:pointer">${e}</button>`).join("")}
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button id="charAvReset" class="save-full" style="flex:1;background:var(--line);color:var(--text)">恢复默认</button>
+      <button id="charAvClose" class="save-full" style="flex:1">完成</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  let selected=current;
+  const upd=(av)=>{const p=$("#charAvatarPrev");if(av.startsWith("data:"))p.innerHTML=`<img src="${av}" style="width:100%;height:100%;object-fit:cover">`;else p.innerHTML=av;};
+  overlay.querySelectorAll(".npc-av-pick").forEach(b=>{b.onclick=()=>{selected=b.dataset.av;upd(selected);};});
+  $("#charUploadBtn").onclick=()=>$("#charAvatarUpload").click();
+  $("#charAvatarUpload").onchange=(e)=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{selected=r.result;upd(selected);};r.readAsDataURL(f);};
+  $("#charAvReset").onclick=()=>{selected=cname[0]||"?";upd(selected);if(!state.prefs.charAvatars)state.prefs.charAvatars={};delete state.prefs.charAvatars[cid];save();renderWorld();};
+  $("#charAvClose").onclick=()=>{
+    if(!state.prefs.charAvatars)state.prefs.charAvatars={};
+    if(selected===cname[0])delete state.prefs.charAvatars[cid];
+    else state.prefs.charAvatars[cid]=selected;
+    save();overlay.remove();renderWorld();
   };
 }
 
